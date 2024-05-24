@@ -1,64 +1,43 @@
-from pymongo.mongo_client import MongoClient
-from pymongo.server_api import ServerApi
+import pymysql
 import json
 
+with open('config.json') as f:
+    data = json.load(f)
+    HOST= data['MARIA']['HOST']
+    USER = data['MARIA']['USER']
+    PASSWORD = data['MARIA']['PASSWORD']
+    DB = data['MARIA']['DB']
 
-class ConnectDatabase():
-    with open('config.json') as f:
-        data = json.load(f)
-        uri = data['MONGO']['URI']
+def insert_game_and_score(game_info):
+    # Connect to the database
+    conn = pymysql.connect(host='localhost', user=USER, password=PASSWORD, db=DB, charset='utf8')
+    cursor = conn.cursor()
 
-    def insert_schedule_into_database(self, options, str_datetime, image_binary):
-        # Create a new client and connect to the server
-        client = MongoClient(self.uri, server_api=ServerApi('1'))
-        database = client[f'{options}']
+    game_info
 
-        """
-        # Send a ping to confirm a successful connection
-        try:
-            database.create_collection()
-        except Exception as e:
-            print(f'{options} has already existed')
-        """
+    # Prepare game_id from game_date and game_number
+    game_date = game_info['game_date']
+    game_number = game_info['game_number']
+    game_id = f"{game_date.month}{game_date.day}{game_number}"
 
-        collection = database.get_collection(options)
+    # Insert into Games table
+    insert_game_query = """
+    INSERT INTO Games (id, time, away, home, stadium, remarks)
+    VALUES (%s, %s, %s, %s, %s, %s)
+    """
+    game_values = (game_id,  game_info['game_time'], game_info['away_team'],
+                   game_info['home_team'], game_info['stadium'], game_info['remarks'])
+    cursor.execute(insert_game_query, game_values)
 
-        collection.insert_one({
-            "_id": str_datetime,
-            "image": image_binary
-        })
+    # Insert into Scores table
+    insert_score_query = """
+    INSERT INTO Scores (game_id, away_score, home_score)
+    VALUES (%s, %s, %s)
+    """
+    score_values = (game_id, away_score, home_score)
+    cursor.execute(insert_score_query, score_values)
 
-        client.close()
-
-    def select_schedule_from_database(self, options, str_datetime):
-
-        # Create a new client and connect to the server
-        client = MongoClient(self.uri, server_api=ServerApi('1'))
-        database = client[f'{options}']
-
-        collection = database.get_collection(options)
-
-        result = collection.find_one({
-            "_id": str_datetime
-        })
-
-        client.close()
-
-        return result
-
-    def update_schedule_set_database(self, options, str_datetime, image_binary):
-        # Create a new client and connect to the server
-        client = MongoClient(self.uri, server_api=ServerApi('1'))
-        database = client[f'{options}']
-
-        collection = database.get_collection(options)
-
-        collection.update_one({
-            "_id": str_datetime
-        }, {
-            "$set": {
-                "image": image_binary
-            }
-        })
-
-        client.close()
+    # Commit and close
+    conn.commit()
+    cursor.close()
+    conn.close()
