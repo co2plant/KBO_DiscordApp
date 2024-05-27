@@ -73,9 +73,10 @@ def insert_schedule_month():
         try:
             temp = row.find_element(By.CLASS_NAME, 'day').text
             temp = re.split(r'[.|(]', temp)
+            incount = 0
         except:
             i=0
-        id_format = temp[0]+temp[1]+str(incount) #무의미한 계산을 줄이기 위해 사용
+        id_format = temp[0]+temp[1]+str(incount).zfill(2) #무의미한 계산을 줄이기 위해 사용
 
         separated_row = row.text.split(' ')
 
@@ -90,19 +91,24 @@ def insert_schedule_month():
                 else:
                     team[j]+=word
 
+        if score[0] == '':
+            score[0] = '-1'
+        if score[1] == '':
+            score[1] = '-1'
+
         print(f'{id_format, team[0], score[0], score[1], team[1], separated_row[-2], separated_row[-1]}')
 
         incount+=1
 
-        database.insert_game_and_score([id_format, temp[0], separated_row[i], team[0], score[0], score[1], team[1], separated_row[-2], separated_row[-1]])
+        database.insert_game_and_score([id_format, separated_row[i], team[0], score[0], score[1], team[1], separated_row[-2], separated_row[-1]])
     driver.quit()
 
 while(True):
-    if input() == '1':
+    opcode = input()
+    if opcode == '1':
         insert_schedule_month()
-    else:
-        update_schedule_once(input())
-    if input() == 'n':
         break
+    elif opcode == '2':
+        update_schedule_once(input())
     else:
-        continue
+        break

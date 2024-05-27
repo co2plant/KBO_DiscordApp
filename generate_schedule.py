@@ -26,7 +26,7 @@ class ImageGenerator():
                 EC.presence_of_element_located((By.XPATH, '//*[@id="content"]/div/div[4]/div[1]'))
             )
             img = schedule_area.screenshot_as_png  # 스크린샷 캡처
-            with open('img.png', 'wb') as f:
+            with open('standing/img.png', 'wb') as f:
                 f.write(img)
         except Exception as e:
             print(f"Error capturing screenshot: {e}")
@@ -50,7 +50,7 @@ class ImageGenerator():
                 d.text((15, 15), f'{selected_date}의 경기일정을 찾을 수 없습니다.', font=title_font, fill=(42, 242, 148))
                 result.save(image_binary, format='PNG')
             else:
-                image = Image.open('img.png')
+                image = Image.open('standing/img.png')
                 image.save(image_binary, format='PNG')
 
             image_binary.seek(0)
