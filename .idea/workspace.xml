@@ -4,12 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="ed547140-ed5b-4472-bd47-d123f45ee182" name="변경" comment="# 몽고 DB 데이터 베이스 작업 추가&#10;# 메인에서 값만 확인하기 위해 커밋 후 체크아웃할 예정">
-      <change afterPath="$PROJECT_DIR$/kbo.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/kbo_crawler.py" afterDir="false" />
+    <list default="true" id="ed547140-ed5b-4472-bd47-d123f45ee182" name="변경" comment="# 이모지 순서 변경">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/database.py" beforeDir="false" afterPath="$PROJECT_DIR$/database.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/generate_schedule.py" beforeDir="false" afterPath="$PROJECT_DIR$/generate_schedule.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kbo_crawler.py" beforeDir="false" afterPath="$PROJECT_DIR$/kbo_crawler.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -233,7 +231,15 @@
       <workItem from="1716337666671" duration="34645000" />
       <workItem from="1716447980928" duration="1518000" />
       <workItem from="1716474294113" duration="2397000" />
-      <workItem from="1716513920943" duration="7802000" />
+      <workItem from="1716513920943" duration="13388000" />
+      <workItem from="1716783184315" duration="12085000" />
+      <workItem from="1716811372510" duration="52000" />
+      <workItem from="1716811990689" duration="1323000" />
+      <workItem from="1716863562294" duration="7683000" />
+      <workItem from="1716876465223" duration="3132000" />
+      <workItem from="1717123051999" duration="1399000" />
+      <workItem from="1717224404313" duration="669000" />
+      <workItem from="1717904885916" duration="9046000" />
     </task>
     <task id="LOCAL-00001" summary="INIT">
       <option name="closed" value="true" />
@@ -251,7 +257,31 @@
       <option name="project" value="LOCAL" />
       <updated>1716189269328</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="# MariaDB로 변경 및 크롤러 기능만 들어있는 기능 추가완료">
+      <option name="closed" value="true" />
+      <created>1716541529459</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1716541529459</updated>
+    </task>
+    <task id="LOCAL-00004" summary="# EC2에 업로드하기 전 커밋">
+      <option name="closed" value="true" />
+      <created>1716811269590</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1716811269590</updated>
+    </task>
+    <task id="LOCAL-00005" summary="# 이모지 순서 변경">
+      <option name="closed" value="true" />
+      <created>1717913130470</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1717913130470</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -271,17 +301,20 @@
   <component name="VcsManagerConfiguration">
     <MESSAGE value="INIT" />
     <MESSAGE value="# 몽고 DB 데이터 베이스 작업 추가&#10;# 메인에서 값만 확인하기 위해 커밋 후 체크아웃할 예정" />
-    <option name="LAST_COMMIT_MESSAGE" value="# 몽고 DB 데이터 베이스 작업 추가&#10;# 메인에서 값만 확인하기 위해 커밋 후 체크아웃할 예정" />
+    <MESSAGE value="# MariaDB로 변경 및 크롤러 기능만 들어있는 기능 추가완료" />
+    <MESSAGE value="# EC2에 업로드하기 전 커밋" />
+    <MESSAGE value="# 이모지 순서 변경" />
+    <option name="LAST_COMMIT_MESSAGE" value="# 이모지 순서 변경" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/DiscordKBO_BOT$delete_test.coverage" NAME="delete_test 커버리지 결과" MODIFIED="1716351614319" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/DiscordKBO_BOT$test.coverage" NAME="test 커버리지 결과" MODIFIED="1716257248948" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/DiscordKBO_BOT$main.coverage" NAME="main 커버리지 결과" MODIFIED="1716170062881" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/DiscordKBO_BOT$kbo_crawler.coverage" NAME="kbo_crawler 커버리지 결과" MODIFIED="1716541461721" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/DiscordKBO_BOT$kbo_crawler.coverage" NAME="kbo_crawler 커버리지 결과" MODIFIED="1717912838059" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/DiscordKBO_BOT$database.coverage" NAME="database 커버리지 결과" MODIFIED="1716170072103" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/DiscordKBO_BOT$discord_bot.coverage" NAME="discord_bot 커버리지 결과" MODIFIED="1716280897739" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/DiscordKBO_BOT$main_sub.coverage" NAME="main_sub 커버리지 결과" MODIFIED="1716146305199" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/DiscordKBO_BOT$kbo.coverage" NAME="kbo 커버리지 결과" MODIFIED="1716392102725" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/DiscordKBO_BOT$kbo.coverage" NAME="kbo 커버리지 결과" MODIFIED="1716866726602" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/DiscordKBO_BOT$main_screenshot.coverage" NAME="main_screenshot 커버리지 결과" MODIFIED="1716199698050" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/DiscordKBO_BOT$example.coverage" NAME="example 커버리지 결과" MODIFIED="1716346969263" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
