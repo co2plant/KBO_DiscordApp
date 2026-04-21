@@ -1,4 +1,3 @@
-import json
 from typing import Optional
 
 import discord
@@ -19,12 +18,11 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 import database
 import kbo_crawler
+import settings
 
-with open('config.json') as f:
-    data = json.load(f)
-    TOKEN = data['DISCORD']['TOKEN']
-    CHANNEL_ID = data['DISCORD']['CHANNEL_ID']
-    GUILD_ID = data['DISCORD']['GUILD_ID']
+TOKEN = settings.DISCORD_TOKEN
+CHANNEL_ID = settings.DISCORD_CHANNEL_ID
+GUILD_ID = settings.DISCORD_GUILD_ID
 
 MY_GUILD = discord.Object(id=GUILD_ID)  # replace with your guild id
 
@@ -70,6 +68,8 @@ async def on_ready():
     print(f'Logged in as {client.user} (ID: {client.user.id})')
     print('------')
     await client.change_presence(status=discord.Status.online, activity=discord.Game('전략 분석'))
+    if not update_tables.is_running():
+        update_tables.start()
 
 @client.tree.command(name='차렷', description='돌승엽이 잘못한 경우에 사용하십시오.')
 async def attention(interaction: discord.Interaction):
@@ -87,6 +87,10 @@ async def as_you_were(interaction: discord.Interaction):
 async def update_tables():
     kbo_crawler.update_standings()
     kbo_crawler.update_schedule_once(datetime.today().strftime('%m%d'))
+
+@update_tables.before_loop
+async def before_update_tables():
+    await client.wait_until_ready()
 
 @client.tree.command(name='순위', description='돌승엽이 KBO 순위를 당신에게 보여줍니다.')
 async def standings(interaction : discord.Interaction):

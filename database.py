@@ -1,12 +1,10 @@
 import pymysql
-import json
+import settings
 
-with open('config.json') as f:
-    data = json.load(f)
-    HOST= data['MARIA']['HOST']
-    USER = data['MARIA']['USER']
-    PASSWORD = data['MARIA']['PASSWORD']
-    DB = data['MARIA']['DB']
+HOST = settings.DB_HOST
+USER = settings.DB_USER
+PASSWORD = settings.DB_PASSWORD
+DB = settings.DB_NAME
 def insert_standings(game_info):
     # Connect to the database
     conn = pymysql.connect(host=HOST, user=USER, password=PASSWORD, db=DB, charset='utf8')
@@ -37,7 +35,7 @@ def update_standings(game_info):
     update_standings_query = """
     UPDATE Standings SET team = %s, win = %s, lose = %s, draw = %s, rate = %s, last_10 = %s, streak = %s, home = %s, away = %s WHERE id = %s
     """
-    standings_values = (game_info[1], game_info[2], game_info[3], game_info[4], game_info[5], game_info[6], game_info[7], game_info[8], game_info[9]. game_info[0])
+    standings_values = (game_info[1], game_info[2], game_info[3], game_info[4], game_info[5], game_info[6], game_info[7], game_info[8], game_info[9], game_info[0])
     try:
         cursor.execute(update_standings_query, standings_values)
     except:

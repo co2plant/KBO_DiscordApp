@@ -194,4 +194,5 @@ def insert_schedule_month():
         database.insert_game_and_score([id_format, separated_row[i], team[0], score[0], score[1], team[1], separated_row[-2], separated_row[-1]])
     driver.quit()
 
-insert_schedule_month()
+if __name__ == '__main__':
+    insert_schedule_month()
