@@ -75,8 +75,9 @@ class TestPhase1Guards(unittest.TestCase):
 
         self.assertEqual(len(target_tuple.elts), 10, 'standings_values should contain 10 placeholders')
 
-        _assert_game_info_index(self, target_tuple.elts[0], 1, 'first update standings_values value must be game_info[1]')
-        _assert_game_info_index(self, target_tuple.elts[-1], 0, 'last update standings_values value must be game_info[0]')
+        _assert_game_info_index(self, target_tuple.elts[0], 0, 'first update standings_values value must be game_info[0]')
+        _assert_game_info_index(self, target_tuple.elts[1], 1, 'second update standings_values value must be game_info[1]')
+        _assert_game_info_index(self, target_tuple.elts[-1], 9, 'last update standings_values value must be game_info[9]')
 
     def test_crawler_update_standings_passes_id_first(self):
         tree = _read_ast('kbo_crawler.py')

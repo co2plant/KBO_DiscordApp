@@ -10,6 +10,10 @@ def _create_driver():
     options.add_argument('no-sandbox')
     return webdriver.Chrome(options)
 
+
+def _build_game_id(selected_date, game_index):
+    return f'{selected_date}{game_index:02d}'
+
 def insert_standings():
     driver = None
     try:
@@ -86,6 +90,7 @@ def update_schedule_once(selected_date):
 
         for i in range(count-rowspan_value, count):
             tds = scheduleArea[i].find_elements(By.TAG_NAME, 'td')
+            game_id = _build_game_id(selected_date, i - (count - rowspan_value))
 
             team = ['', '']
             score = ['', '']
@@ -98,7 +103,7 @@ def update_schedule_once(selected_date):
                             score[j]+=word
                         else:
                             team[j]+=word
-                database.update_game_and_score([selected_date, tds[1].text, team[0], score[0], score[1], team[1], tds[7].text, tds[8].text])
+                database.update_game_and_score([game_id, tds[1].text, team[0], score[0], score[1], team[1], tds[7].text, tds[8].text])
             else:
                 temp = tds[1].text.split('vs')
                 for j in range(2):
@@ -107,7 +112,7 @@ def update_schedule_once(selected_date):
                             score[j]+=word
                         else:
                             team[j]+=word
-                database.update_game_and_score([selected_date, tds[0].text, team[0], score[0], score[1], team[1], tds[6].text, tds[7].text])
+                database.update_game_and_score([game_id, tds[0].text, team[0], score[0], score[1], team[1], tds[6].text, tds[7].text])
     finally:
         if driver is not None:
             driver.quit()
