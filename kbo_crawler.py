@@ -49,7 +49,7 @@ def update_standings():
         streak = tds[9].text
         home = tds[10].text
         away = tds[11].text
-        database.update_standings([team, win, lose, draw, rate, last_10, streak, home, away, id])
+        database.update_standings([id, team, win, lose, draw, rate, last_10, streak, home, away])
 
 def update_schedule_once(selected_date):
     options = webdriver.ChromeOptions()
