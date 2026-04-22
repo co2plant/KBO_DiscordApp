@@ -17,7 +17,7 @@ COPY . /app
 
 RUN python -m pip install --upgrade pip \
     && pip install --no-cache-dir \
-        discord.py \
+        discord.py==2.7.1 \
         pymysql \
         selenium \
         pillow \
