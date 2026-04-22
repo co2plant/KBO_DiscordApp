@@ -127,6 +127,20 @@ async def ensure_data_ready():
 
         _data_ready = True
 
+
+def _normalize_team_name(team_name: str) -> str:
+    return team_name.strip().upper()
+
+
+def _find_standings_team(from_db_result, team_name: str):
+    normalized_team_name = _normalize_team_name(team_name)
+
+    for team_row in from_db_result:
+        if _normalize_team_name(team_row[1]) == normalized_team_name:
+            return team_row
+
+    return None
+
 @client.event
 async def on_ready():
     print(f'Logged in as {client.user} (ID: {client.user.id})')
@@ -184,13 +198,49 @@ async def standings(interaction : discord.Interaction):
             team_row = from_db_result[index]
             lines.append(
                 f'{emoji[index+1]} {logo_emoji[team_row[1]]} {team_row[1]} · '
-                f'{team_row[2]}승 {team_row[3]}패 {team_row[4]}무 ({team_row[5]}) · '
-                f'최근10 {team_row[6]} · {team_row[7]} · 홈 {team_row[8]} · 방문 {team_row[9]}'
+                f'{team_row[2]}승 {team_row[3]}패 {team_row[4]}무 ({team_row[5]})'
             )
 
         if lines:
             embed.add_field(name=section_name, value='\n'.join(lines), inline=False)
 
+    embed.set_footer(text='Created').timestamp = datetime.now()
+
+    await interaction.followup.send(embed=embed)
+
+
+@client.tree.command(name='성적', description='선택한 팀의 KBO 상세 성적을 보여줍니다.')
+@app_commands.describe(team='상세 성적을 확인할 팀 이름을 입력하세요.')
+async def team_standings(interaction: discord.Interaction, team: str):
+    await interaction.response.defer(thinking=True)
+    await ensure_data_ready()
+
+    from_db_result = database.select_standings()
+    if from_db_result is None:
+        await interaction.followup.send('순위 데이터를 찾을 수 없습니다.')
+        return
+
+    team_row = _find_standings_team(from_db_result, team)
+    if team_row is None:
+        await interaction.followup.send(f'{team} 팀의 성적을 찾을 수 없습니다.')
+        return
+
+    embed = discord.Embed(
+        title=f'{logo_emoji[team_row[1]]} {team_row[1]} 성적',
+        url='https://sports.news.naver.com/kbaseball/record/index?category=kbo',
+        color=0x00AEEF,
+    )
+    embed.add_field(
+        name='요약',
+        value=(
+            f'{team_row[0]}위 · {team_row[2]}승 {team_row[3]}패 {team_row[4]}무 ({team_row[5]})'
+        ),
+        inline=False,
+    )
+    embed.add_field(name='최근 10경기', value=team_row[6], inline=True)
+    embed.add_field(name='연속', value=team_row[7], inline=True)
+    embed.add_field(name='홈', value=team_row[8], inline=True)
+    embed.add_field(name='원정', value=team_row[9], inline=True)
     embed.set_footer(text='Created').timestamp = datetime.now()
 
     await interaction.followup.send(embed=embed)

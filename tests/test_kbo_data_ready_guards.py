@@ -40,9 +40,11 @@ class TestKboDataReadyGuards(unittest.TestCase):
     def test_data_commands_await_data_ready(self):
         tree = _read_ast('kbo.py')
         standings = _find_function(tree, 'standings')
+        team_standings = _find_function(tree, 'team_standings')
         schedule = _find_function(tree, 'schedule')
 
         self.assertTrue(_has_awaited_name_call(standings, 'ensure_data_ready'))
+        self.assertTrue(_has_awaited_name_call(team_standings, 'ensure_data_ready'))
         self.assertTrue(_has_awaited_name_call(schedule, 'ensure_data_ready'))
 
 
