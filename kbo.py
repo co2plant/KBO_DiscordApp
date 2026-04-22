@@ -141,6 +141,16 @@ def _find_standings_team(from_db_result, team_name: str):
 
     return None
 
+
+def _is_hot_streak(streak: str) -> bool:
+    streak = streak.strip()
+
+    if not streak.endswith('승'):
+        return False
+
+    win_count = streak.removesuffix('승')
+    return win_count.isdigit() and int(win_count) >= 3
+
 @client.event
 async def on_ready():
     print(f'Logged in as {client.user} (ID: {client.user.id})')
@@ -183,26 +193,16 @@ async def standings(interaction : discord.Interaction):
         await interaction.followup.send('순위 데이터를 찾을 수 없습니다.')
         return
 
-    section_ranges = [
-        ('1-3위', range(0, 3)),
-        ('4-6위', range(3, 6)),
-        ('7-10위', range(6, len(from_db_result))),
-    ]
+    lines = []
+    for index, team_row in enumerate(from_db_result):
+        hot_streak = ' 🔥' if _is_hot_streak(team_row[7]) else ''
+        lines.append(
+            f'{emoji[index+1]} {logo_emoji[team_row[1]]} {team_row[1]}{hot_streak} · '
+            f'{team_row[2]}승 {team_row[3]}패 {team_row[4]}무 ({team_row[5]})'
+        )
 
-    for section_name, indexes in section_ranges:
-        lines = []
-        for index in indexes:
-            if index >= len(from_db_result):
-                continue
-
-            team_row = from_db_result[index]
-            lines.append(
-                f'{emoji[index+1]} {logo_emoji[team_row[1]]} {team_row[1]} · '
-                f'{team_row[2]}승 {team_row[3]}패 {team_row[4]}무 ({team_row[5]})'
-            )
-
-        if lines:
-            embed.add_field(name=section_name, value='\n'.join(lines), inline=False)
+    if lines:
+        embed.add_field(name='전체 순위', value='\n'.join(lines), inline=False)
 
     embed.set_footer(text='Created').timestamp = datetime.now()
 

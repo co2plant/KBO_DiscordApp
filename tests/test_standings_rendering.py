@@ -9,11 +9,21 @@ def _read_ast(path: str) -> ast.Module:
     return ast.parse(source, filename=path)
 
 
-def _find_function(tree: ast.Module, name: str) -> ast.AsyncFunctionDef:
+def _find_function(tree: ast.Module, name: str) -> ast.FunctionDef | ast.AsyncFunctionDef:
     for node in tree.body:
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == name:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
             return node
     raise AssertionError(f'{name} function not found')
+
+
+def _load_function(path: str, name: str):
+    tree = _read_ast(path)
+    function_node = _find_function(tree, name)
+    module = ast.Module(body=[function_node], type_ignores=[])
+    ast.fix_missing_locations(module)
+    namespace = {}
+    exec(compile(module, path, 'exec'), namespace)
+    return namespace[name]
 
 
 class TestStandingsRendering(unittest.TestCase):
@@ -53,28 +63,15 @@ class TestStandingsRendering(unittest.TestCase):
 
             self.assertNotEqual(inner.slice.value, 2, 'standings must not use win column for logo lookup')
 
-    def test_standings_uses_sectioned_non_inline_fields(self):
+    def test_standings_uses_single_non_inline_field(self):
         tree = _read_ast('kbo.py')
         standings = _find_function(tree, 'standings')
 
-        section_names = []
+        field_names = []
         inline_values = []
         add_field_calls = 0
 
         for node in ast.walk(standings):
-            if isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if not isinstance(target, ast.Name) or target.id != 'section_ranges':
-                        continue
-                    self.assertIsInstance(node.value, ast.List)
-                    section_ranges = cast(ast.List, node.value)
-                    for element in section_ranges.elts:
-                        self.assertIsInstance(element, ast.Tuple)
-                        section_tuple = cast(ast.Tuple, element)
-                        self.assertIsInstance(section_tuple.elts[0], ast.Constant)
-                        section_name = cast(ast.Constant, section_tuple.elts[0])
-                        section_names.append(section_name.value)
-
             if not isinstance(node, ast.Call):
                 continue
             if not isinstance(node.func, ast.Attribute) or node.func.attr != 'add_field':
@@ -83,12 +80,28 @@ class TestStandingsRendering(unittest.TestCase):
             add_field_calls += 1
 
             for keyword in node.keywords:
+                if keyword.arg == 'name' and isinstance(keyword.value, ast.Constant):
+                    field_names.append(keyword.value.value)
                 if keyword.arg == 'inline' and isinstance(keyword.value, ast.Constant):
                     inline_values.append(keyword.value.value)
 
-        self.assertEqual(section_names, ['1-3위', '4-6위', '7-10위'])
+        self.assertEqual(field_names, ['전체 순위'])
         self.assertEqual(add_field_calls, 1)
         self.assertEqual(inline_values, [False])
+
+    def test_standings_no_longer_uses_rank_band_labels(self):
+        tree = _read_ast('kbo.py')
+        standings = _find_function(tree, 'standings')
+
+        joined_constants = []
+        for node in ast.walk(standings):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                joined_constants.append(node.value)
+
+        rendered_text = ''.join(joined_constants)
+        self.assertNotIn('1-3위', rendered_text)
+        self.assertNotIn('4-6위', rendered_text)
+        self.assertNotIn('7-10위', rendered_text)
 
     def test_standings_line_includes_all_core_stats(self):
         tree = _read_ast('kbo.py')
@@ -117,6 +130,25 @@ class TestStandingsRendering(unittest.TestCase):
         self.assertNotIn('홈 ', rendered_text)
         self.assertNotIn('방문 ', rendered_text)
         self.assertNotIn('연속', rendered_text)
+
+    def test_is_hot_streak_only_marks_three_or_more_wins(self):
+        is_hot_streak = _load_function('kbo.py', '_is_hot_streak')
+
+        self.assertTrue(is_hot_streak('3승'))
+        self.assertTrue(is_hot_streak('4승'))
+        self.assertFalse(is_hot_streak('2승'))
+        self.assertFalse(is_hot_streak('1패'))
+
+    def test_standings_fire_emoji_is_present_in_summary_format(self):
+        tree = _read_ast('kbo.py')
+        standings = _find_function(tree, 'standings')
+
+        joined_constants = []
+        for node in ast.walk(standings):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                joined_constants.append(node.value)
+
+        self.assertIn(' 🔥', ''.join(joined_constants))
 
     def test_team_standings_command_exists(self):
         tree = _read_ast('kbo.py')
