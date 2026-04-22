@@ -153,4 +153,10 @@ async def schedule(interaction: discord.Interaction, args_date: Literal['오늘'
 
     await interaction.response.send_message(embed=embed)
 
-client.run(TOKEN)
+
+def main():
+    client.run(TOKEN)
+
+
+if __name__ == '__main__':
+    main()
