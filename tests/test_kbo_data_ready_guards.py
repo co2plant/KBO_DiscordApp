@@ -47,6 +47,28 @@ class TestKboDataReadyGuards(unittest.TestCase):
         self.assertTrue(_has_awaited_name_call(team_standings, 'ensure_data_ready'))
         self.assertTrue(_has_awaited_name_call(schedule, 'ensure_data_ready'))
 
+    def test_update_tables_uses_kst_date_for_schedule_refresh(self):
+        tree = _read_ast('kbo.py')
+        update_tables = _find_function(tree, 'update_tables')
+
+        saw_datetime_today = False
+        saw_kst_now = False
+
+        for node in ast.walk(update_tables):
+            if not isinstance(node, ast.Call):
+                continue
+
+            if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+                if node.func.value.id == 'datetime' and node.func.attr == 'today':
+                    saw_datetime_today = True
+
+                if node.func.value.id == 'datetime' and node.func.attr == 'now':
+                    if len(node.args) == 1 and isinstance(node.args[0], ast.Name) and node.args[0].id == 'KST':
+                        saw_kst_now = True
+
+        self.assertFalse(saw_datetime_today, 'update_tables should not use host-local datetime.today()')
+        self.assertTrue(saw_kst_now, 'update_tables should use datetime.now(KST) for schedule refresh')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -28,6 +28,7 @@ GUILD_ID = settings.DISCORD_GUILD_ID
 MY_GUILD = discord.Object(id=GUILD_ID)  # replace with your guild id
 
 days = ['월', '화', '수', '목', '금', '토', '일']
+KST = timezone(timedelta(hours=9))
 emoji = [':zero:',':one:',':two:',':three:',':four:',':five:',':six:',':seven:',':eight:',':nine:','🔟']
 logo_emoji = {
         '두산':'<:OB:1242717662954651720>',
@@ -172,10 +173,10 @@ async def parade_rest(interaction: discord.Interaction):
 async def as_you_were(interaction: discord.Interaction):
     await interaction.response.send_message(f'쉬어!')
 
-@tasks.loop(time=dt_time(hour=6, tzinfo=timezone(timedelta(hours=9))))
+@tasks.loop(time=dt_time(hour=6, tzinfo=KST))
 async def update_tables():
     await asyncio.to_thread(kbo_crawler.update_standings)
-    await asyncio.to_thread(kbo_crawler.update_schedule_once, datetime.today().strftime('%m%d'))
+    await asyncio.to_thread(kbo_crawler.update_schedule_once, datetime.now(KST).strftime('%m%d'))
 
 @update_tables.before_loop
 async def before_update_tables():
