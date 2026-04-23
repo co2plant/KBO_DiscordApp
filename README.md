@@ -1,20 +1,22 @@
 # KBO_DiscordApp
 
 ## 문서
-- [2026 부활 가이드](Docs/Revival_Plan_2026.md)
-- [2026 부활 점검 리포트](Docs/Revival_Audit_2026-04.md)
-- [다음 작업 보고서](Docs/Next_Steps_2026-04.md)
-- [엄격 리뷰 보고서](Docs/Strict_Review_2026-04.md)
-- [초엄격 리뷰 보고서](Docs/Ultra_Strict_Review_2026-04.md)
-- [운영 승인 체크리스트](Docs/Production_Approval_Checklist_2026-04.md)
+- [플랜 우선 작업 흐름](PLAN_FIRST_WORKFLOW.md)
+- [테스트 실행 안내](tests/README.md)
 
 ## 파이썬 자동 테스트 도구
-- 기본 내장: `unittest` (파이썬 표준 라이브러리)
-- 실무에서 많이 사용: `pytest` (간결한 문법/강력한 fixture)
+- 기본 검증 기준: `unittest` (파이썬 표준 라이브러리)
+- 선택 실행: `pytest`가 설치된 경우 `unittest` 호환 테스트를 함께 실행 가능
 
 ### 테스트 실행
 ```bash
-python -m unittest discover -s tests -p 'test_*.py'
+python3 -m unittest discover -s tests -p 'test_*.py'
+```
+
+### 단계별 검증 예시
+```bash
+python3 -m unittest tests.test_crawler_cleanup tests.test_settings_validation tests.test_runtime_guard -v
+python3 -m py_compile settings.py kbo.py kbo_crawler.py
 ```
 
 ## 여기(개발 컨테이너)에서 디스코드 실제 실행 가능한가?

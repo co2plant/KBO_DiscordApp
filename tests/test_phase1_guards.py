@@ -4,33 +4,97 @@ from pathlib import Path
 
 
 
-def _read_ast(path: str) -> ast.AST:
+def _read_ast(path: str) -> ast.Module:
     source = Path(path).read_text(encoding='utf-8')
     return ast.parse(source, filename=path)
 
 
+def _find_function(tree: ast.Module, name: str) -> ast.FunctionDef:
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            return node
+    raise AssertionError(f'{name} function not found')
+
+
+def _find_named_tuple_assignment(function_node: ast.FunctionDef, target_name: str) -> ast.Tuple:
+    for node in ast.walk(function_node):
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Tuple):
+            continue
+
+        for target in node.targets:
+            if isinstance(target, ast.Name) and target.id == target_name:
+                return node.value
+
+    raise AssertionError(f'{target_name} tuple assignment not found in {function_node.name}')
+
+
+def _assert_game_info_index(test_case: unittest.TestCase, element: ast.AST, expected_index: int, message: str):
+    test_case.assertIsInstance(element, ast.Subscript, message)
+    if not isinstance(element, ast.Subscript):
+        raise AssertionError(message)
+
+    test_case.assertIsInstance(element.value, ast.Name, message)
+    if not isinstance(element.value, ast.Name):
+        raise AssertionError(message)
+
+    test_case.assertEqual(element.value.id, 'game_info', message)
+
+    idx = element.slice.value if isinstance(element.slice, ast.Constant) else None
+    test_case.assertEqual(idx, expected_index, message)
+
+
+def _find_database_update_standings_call(function_node: ast.FunctionDef) -> ast.Call:
+    for node in ast.walk(function_node):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Attribute):
+            continue
+        if not isinstance(node.func.value, ast.Name):
+            continue
+        if node.func.value.id == 'database' and node.func.attr == 'update_standings':
+            return node
+
+    raise AssertionError('database.update_standings(...) call not found')
+
+
 class TestPhase1Guards(unittest.TestCase):
-    def test_update_standings_tuple_shape_and_order(self):
+    def test_insert_standings_tuple_shape_and_order(self):
         tree = _read_ast('database.py')
+        insert_standings = _find_function(tree, 'insert_standings')
+        target_tuple = _find_named_tuple_assignment(insert_standings, 'standings_values')
 
-        target_tuple = None
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assign):
-                for t in node.targets:
-                    if isinstance(t, ast.Name) and t.id == 'standings_values':
-                        if isinstance(node.value, ast.Tuple):
-                            target_tuple = node.value
-
-        self.assertIsNotNone(target_tuple, 'standings_values tuple assignment not found')
         self.assertEqual(len(target_tuple.elts), 10, 'standings_values should contain 10 placeholders')
 
-        last = target_tuple.elts[-1]
-        self.assertIsInstance(last, ast.Subscript, 'last standings_values value must be game_info[0]')
-        self.assertIsInstance(last.value, ast.Name)
-        self.assertEqual(last.value.id, 'game_info')
+        _assert_game_info_index(self, target_tuple.elts[0], 0, 'first insert standings_values value must be game_info[0]')
+        _assert_game_info_index(self, target_tuple.elts[-1], 9, 'last insert standings_values value must be game_info[9]')
 
-        idx = last.slice.value if isinstance(last.slice, ast.Constant) else None
-        self.assertEqual(idx, 0, 'last standings_values value must be game_info[0]')
+    def test_update_standings_tuple_shape_and_order(self):
+        tree = _read_ast('database.py')
+        update_standings = _find_function(tree, 'update_standings')
+        target_tuple = _find_named_tuple_assignment(update_standings, 'standings_values')
+
+        self.assertEqual(len(target_tuple.elts), 10, 'standings_values should contain 10 placeholders')
+
+        _assert_game_info_index(self, target_tuple.elts[0], 0, 'first update standings_values value must be game_info[0]')
+        _assert_game_info_index(self, target_tuple.elts[1], 1, 'second update standings_values value must be game_info[1]')
+        _assert_game_info_index(self, target_tuple.elts[-1], 9, 'last update standings_values value must be game_info[9]')
+
+    def test_crawler_update_standings_passes_id_first(self):
+        tree = _read_ast('kbo_crawler.py')
+        update_standings = _find_function(tree, 'update_standings')
+        update_call = _find_database_update_standings_call(update_standings)
+
+        self.assertEqual(len(update_call.args), 1, 'database.update_standings should receive one list argument')
+        self.assertIsInstance(update_call.args[0], ast.List, 'database.update_standings argument must be a list literal')
+        if not isinstance(update_call.args[0], ast.List):
+            raise AssertionError('database.update_standings argument must be a list literal')
+
+        arg_names = [elt.id if isinstance(elt, ast.Name) else None for elt in update_call.args[0].elts]
+        self.assertEqual(
+            arg_names,
+            ['id', 'team', 'win', 'lose', 'draw', 'rate', 'last_10', 'streak', 'home', 'away'],
+            'crawler must pass update_standings values with id first',
+        )
 
     def test_crawler_import_guard_exists(self):
         tree = _read_ast('kbo_crawler.py')
