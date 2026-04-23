@@ -193,12 +193,12 @@ async def standings(interaction : discord.Interaction):
         await interaction.followup.send('순위 데이터를 찾을 수 없습니다.')
         return
 
-    lines = []
+    lines = ['순위 | 팀 | 승 | 패 | 무 | 승률']
     for index, team_row in enumerate(from_db_result):
         hot_streak = ' 🔥' if _is_hot_streak(team_row[7]) else ''
         lines.append(
-            f'{emoji[index+1]} {logo_emoji[team_row[1]]} {team_row[1]}{hot_streak} · '
-            f'{team_row[2]}승 {team_row[3]}패 {team_row[4]}무 ({team_row[5]})'
+            f'{emoji[index+1]} | {logo_emoji[team_row[1]]} {team_row[1]}{hot_streak} | '
+            f'{team_row[2]} | {team_row[3]} | {team_row[4]} | {team_row[5]}'
         )
 
     if lines:

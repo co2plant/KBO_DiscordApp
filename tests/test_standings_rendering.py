@@ -112,9 +112,9 @@ class TestStandingsRendering(unittest.TestCase):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
                 joined_constants.append(node.value)
 
-        self.assertIn('승 ', ''.join(joined_constants))
-        self.assertIn('패 ', ''.join(joined_constants))
-        self.assertIn('무 (', ''.join(joined_constants))
+        rendered_text = ''.join(joined_constants)
+        self.assertIn('순위 | 팀 | 승 | 패 | 무 | 승률', rendered_text)
+        self.assertIn(' | ', rendered_text)
 
     def test_standings_summary_omits_detail_stats(self):
         tree = _read_ast('kbo.py')
@@ -130,6 +130,18 @@ class TestStandingsRendering(unittest.TestCase):
         self.assertNotIn('홈 ', rendered_text)
         self.assertNotIn('방문 ', rendered_text)
         self.assertNotIn('연속', rendered_text)
+
+    def test_standings_summary_labels_are_explicit(self):
+        tree = _read_ast('kbo.py')
+        standings = _find_function(tree, 'standings')
+
+        joined_constants = []
+        for node in ast.walk(standings):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                joined_constants.append(node.value)
+
+        rendered_text = ''.join(joined_constants)
+        self.assertIn('순위 | 팀 | 승 | 패 | 무 | 승률', rendered_text)
 
     def test_is_hot_streak_only_marks_three_or_more_wins(self):
         is_hot_streak = _load_function('kbo.py', '_is_hot_streak')
