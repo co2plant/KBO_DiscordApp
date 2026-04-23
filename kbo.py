@@ -98,6 +98,11 @@ def _format_schedule_matchup(selected_date: datetime, row) -> str:
     away_score = row[7]
     home_score = row[8]
 
+    if away_score == -1:
+        away_score = 0
+    if home_score == -1:
+        home_score = 0
+
     if _should_hide_schedule_score(selected_date, game_time, remarks, away_score, home_score):
         score_text = 'vs'
     else:

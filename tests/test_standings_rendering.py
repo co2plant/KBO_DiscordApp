@@ -16,12 +16,12 @@ def _find_function(tree: ast.Module, name: str) -> ast.FunctionDef | ast.AsyncFu
     raise AssertionError(f'{name} function not found')
 
 
-def _load_function(path: str, name: str):
+def _load_function(path: str, name: str, namespace=None):
     tree = _read_ast(path)
     function_node = _find_function(tree, name)
     module = ast.Module(body=[function_node], type_ignores=[])
     ast.fix_missing_locations(module)
-    namespace = {}
+    namespace = {} if namespace is None else dict(namespace)
     exec(compile(module, path, 'exec'), namespace)
     return namespace[name]
 
@@ -202,6 +202,23 @@ class TestStandingsRendering(unittest.TestCase):
                 missing_team_message_found = True
 
         self.assertTrue(missing_team_message_found)
+
+    def test_schedule_matchup_hides_negative_one_sentinel_scores(self):
+        format_schedule_matchup = _load_function(
+            'kbo.py',
+            '_format_schedule_matchup',
+            namespace={
+                'datetime': object,
+                'logo_emoji': {'한화': ':HH:', 'LG': ':LG:'},
+                '_should_hide_schedule_score': lambda *_args: True,
+            },
+        )
+
+        row = ('042200', '18:30', '한화', 'LG', '잠실', '-', -1, -1, -1)
+        rendered = format_schedule_matchup(None, row)
+
+        self.assertNotIn('-1', rendered)
+        self.assertIn('vs', rendered)
 
 
 if __name__ == '__main__':
