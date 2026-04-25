@@ -88,6 +88,8 @@ class TestSituationalStatsDatabase(unittest.TestCase):
         self.assertIn('CREATE TABLE IF NOT EXISTS players', executed_sql)
         self.assertIn('player_id VARCHAR(32) PRIMARY KEY', executed_sql)
         self.assertIn('CREATE TABLE IF NOT EXISTS situational_stats', executed_sql)
+        self.assertIn('wp INT', executed_sql)
+        self.assertIn('bk INT', executed_sql)
         self.assertIn('UNIQUE KEY uq_situational_stats', executed_sql)
         self.assertIn('season, entity_type, entity_id, split_type, split_key', executed_sql)
         self.assertEqual(schema_conn.commit_calls, 1)
@@ -143,6 +145,8 @@ class TestSituationalStatsDatabase(unittest.TestCase):
             'hbp': 0,
             'so': 1,
             'gidp': 0,
+            'wp': 0,
+            'bk': 0,
             'avg': 0.333,
             'obp': 0.5,
             'slg': 1.333,
@@ -157,6 +161,38 @@ class TestSituationalStatsDatabase(unittest.TestCase):
         self.assertEqual(executed[0][1][:6], (2026, 'player', '67341', '키움', 'runner_state', 'bases_loaded'))
         self.assertEqual(upsert_conn.commit_calls, 1)
         self.assertTrue(upsert_conn.closed)
+
+    def test_upsert_pitcher_count_stat_persists_wp_and_bk(self):
+        schema_conn = _FakeConnection()
+        upsert_conn = _FakeConnection()
+        database = _load_database_module([schema_conn, upsert_conn])
+
+        database.ensure_schema()
+        database.upsert_situational_stat({
+            'season': 2026,
+            'entity_type': 'player',
+            'entity_id': '77637',
+            'team_name': 'KIA TIGERS',
+            'split_type': 'count_state',
+            'split_key': 'count_0_2',
+            'h': 1,
+            'double_hits': 0,
+            'triple_hits': 0,
+            'hr': 0,
+            'bb': 1,
+            'hbp': 0,
+            'so': 5,
+            'wp': 0,
+            'bk': 0,
+            'avg': 0.083,
+            'source_updated_at': '2026-04-24 00:00:00',
+        })
+
+        executed = upsert_conn.cursor_instance.executed
+        self.assertIn('wp, bk', executed[0][0])
+        self.assertIn('wp = VALUES(wp)', executed[0][0])
+        self.assertIn('bk = VALUES(bk)', executed[0][0])
+        self.assertEqual(executed[0][1][5], 'count_0_2')
 
     def test_search_players_by_name_exact_normalized_and_ambiguous(self):
         schema_conn = _FakeConnection()
@@ -179,7 +215,7 @@ class TestSituationalStatsDatabase(unittest.TestCase):
         select_conn = _FakeConnection()
         select_conn.cursor_instance.fetchone_result = (
             2026, 'player', '67341', '키움', 'runner_state', 'bases_loaded', 4, 3, 1, 0, 0, 1,
-            4, 1, 0, 1, 0, 0.333, 0.5, 1.333, 1.833, '2026-04-24',
+            4, 1, 0, 1, 0, 0, 0, 0.333, 0.5, 1.333, 1.833, '2026-04-24',
         )
         database = _load_database_module([schema_conn, select_conn])
 
@@ -188,7 +224,25 @@ class TestSituationalStatsDatabase(unittest.TestCase):
 
         self.assertEqual(row['entity_id'], '67341')
         self.assertEqual(row['split_key'], 'bases_loaded')
-        self.assertEqual(select_conn.cursor_instance.executed[0][1], ('67341', 2026, 'bases_loaded'))
+        self.assertEqual(select_conn.cursor_instance.executed[0][1], ('67341', 2026, 'runner_state', 'bases_loaded'))
+
+    def test_get_pitcher_count_situational_stats_by_split(self):
+        schema_conn = _FakeConnection()
+        select_conn = _FakeConnection()
+        select_conn.cursor_instance.fetchone_result = (
+            2026, 'player', '77637', 'KIA TIGERS', 'count_state', 'count_0_2', None, None, 1, 0, 0, 0,
+            None, 1, 0, 5, None, 0, 0, 0.083, None, None, None, '2026-04-24',
+        )
+        database = _load_database_module([schema_conn, select_conn])
+
+        database.ensure_schema()
+        row = database.get_player_situational_stats('77637', 2026, 'count_0_2', split_type='count_state')
+
+        self.assertEqual(row['entity_id'], '77637')
+        self.assertEqual(row['split_type'], 'count_state')
+        self.assertEqual(row['wp'], 0)
+        self.assertEqual(row['bk'], 0)
+        self.assertEqual(select_conn.cursor_instance.executed[0][1], ('77637', 2026, 'count_state', 'count_0_2'))
 
     def test_get_team_situational_aggregate_from_player_rows(self):
         schema_conn = _FakeConnection()
@@ -252,6 +306,18 @@ class TestSituationalStatsDatabase(unittest.TestCase):
 
         database.ensure_schema()
         self.assertTrue(database.should_refresh_situational_stats(now))
+
+    def test_has_situational_stats_checks_split_type(self):
+        schema_conn = _FakeConnection()
+        count_conn = _FakeConnection()
+        count_conn.cursor_instance.fetchone_result = (1,)
+        database = _load_database_module([schema_conn, count_conn])
+
+        database.ensure_schema()
+        self.assertTrue(database.has_situational_stats('count_state'))
+
+        self.assertIn("split_type = %s", count_conn.cursor_instance.executed[0][0])
+        self.assertEqual(count_conn.cursor_instance.executed[0][1], ('count_state',))
 
 
 if __name__ == '__main__':

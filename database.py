@@ -1,5 +1,8 @@
 import pymysql
 import settings
+from datetime import datetime
+from decimal import Decimal
+from pathlib import Path
 
 
 def _require_setting(name, value):
@@ -14,6 +17,20 @@ PASSWORD = _require_setting('DB_PASSWORD', settings.DB_PASSWORD)
 DB = _require_setting('DB_NAME', settings.DB_NAME)
 
 _SCHEMA_READY = False
+
+SQL_DUMP_DIR = Path('data/sql_dumps')
+
+_DUMP_TABLES = (
+    ('Standings', ('id', 'team', 'win', 'lose', 'draw', 'rate', 'last_10', 'streak', 'home', 'away')),
+    ('Games', ('id', 'time', 'away', 'home', 'stadium', 'remarks')),
+    ('Scores', ('id', 'away_score', 'home_score')),
+    ('players', ('player_id', 'team_name', 'name', 'position', 'born', 'height_weight', 'salary', 'debut', 'updated_at')),
+    ('situational_stats', (
+        'id', 'season', 'entity_type', 'entity_id', 'team_name', 'split_type', 'split_key', 'pa', 'ab', 'h',
+        'double_hits', 'triple_hits', 'hr', 'rbi', 'bb', 'hbp', 'so', 'gidp', 'wp', 'bk', 'avg', 'obp', 'slg',
+        'ops', 'source_updated_at', 'created_at', 'updated_at',
+    )),
+)
 
 _SCHEMA_STATEMENTS = (
     """
@@ -81,6 +98,8 @@ _SCHEMA_STATEMENTS = (
         hbp INT,
         so INT,
         gidp INT,
+        wp INT,
+        bk INT,
         avg DECIMAL(5,3),
         obp DECIMAL(5,3),
         slg DECIMAL(5,3),
@@ -104,6 +123,14 @@ def _ensure_schema(conn):
     try:
         for statement in _SCHEMA_STATEMENTS:
             cursor.execute(statement)
+        for column_name in ('wp', 'bk'):
+            cursor.execute("""
+            SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'situational_stats' AND COLUMN_NAME = %s
+            """, (DB, column_name))
+            row = cursor.fetchone()
+            if row is None or row[0] == 0:
+                cursor.execute(f"ALTER TABLE situational_stats ADD COLUMN {column_name} INT AFTER gidp")
         cursor.execute("SHOW INDEX FROM Standings WHERE Key_name = 'PRIMARY'")
         primary_columns = [row[4] for row in cursor.fetchall()]
         if primary_columns != ['team']:
@@ -123,6 +150,68 @@ def _connect():
 def ensure_schema():
     conn = _connect()
     conn.close()
+
+
+def _quote_identifier(value):
+    return f"`{str(value).replace('`', '``')}`"
+
+
+def _sql_literal(value):
+    if value is None:
+        return 'NULL'
+    if isinstance(value, bool):
+        return '1' if value else '0'
+    if isinstance(value, (int, float, Decimal)):
+        return str(value)
+    if hasattr(value, 'strftime'):
+        return f"'{value.strftime('%Y-%m-%d %H:%M:%S')}'"
+    text = str(value).replace('\\', '\\\\').replace("'", "''")
+    return f"'{text}'"
+
+
+def export_sql_snapshot(output_dir=None, filename=None):
+    target_dir = Path(output_dir) if output_dir is not None else SQL_DUMP_DIR
+    target_dir.mkdir(parents=True, exist_ok=True)
+    if filename is None:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'kbo_snapshot_{timestamp}.sql'
+    dump_path = target_dir / filename
+
+    conn = _connect()
+    cursor = conn.cursor()
+    try:
+        lines = [
+            '-- KBO DiscordApp crawler snapshot',
+            f'-- Generated at {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}',
+            'SET FOREIGN_KEY_CHECKS=0;',
+            '',
+        ]
+        for table_name, _columns in reversed(_DUMP_TABLES):
+            lines.append(f'DELETE FROM {_quote_identifier(table_name)};')
+        lines.append('')
+
+        for table_name, columns in _DUMP_TABLES:
+            column_sql = ', '.join(_quote_identifier(column) for column in columns)
+            cursor.execute(f"SELECT {column_sql} FROM {_quote_identifier(table_name)}")
+            rows = cursor.fetchall()
+            if not rows:
+                continue
+            lines.append(f'-- {table_name}')
+            for row in rows:
+                if isinstance(row, dict):
+                    values = [row.get(column) for column in columns]
+                else:
+                    values = list(row)
+                value_sql = ', '.join(_sql_literal(value) for value in values)
+                lines.append(f'INSERT INTO {_quote_identifier(table_name)} ({column_sql}) VALUES ({value_sql});')
+            lines.append('')
+
+        lines.append('SET FOREIGN_KEY_CHECKS=1;')
+        dump_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+        return str(dump_path)
+    finally:
+        cursor.close()
+        conn.close()
 
 
 def _normalize_name(value):
@@ -205,9 +294,9 @@ def upsert_situational_stat(stat_row):
     INSERT INTO situational_stats (
         season, entity_type, entity_id, team_name, split_type, split_key,
         pa, ab, h, double_hits, triple_hits, hr, rbi, bb, hbp, so, gidp,
-        avg, obp, slg, ops, source_updated_at
+        wp, bk, avg, obp, slg, ops, source_updated_at
     )
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     ON DUPLICATE KEY UPDATE
         team_name = VALUES(team_name),
         pa = VALUES(pa),
@@ -221,6 +310,8 @@ def upsert_situational_stat(stat_row):
         hbp = VALUES(hbp),
         so = VALUES(so),
         gidp = VALUES(gidp),
+        wp = VALUES(wp),
+        bk = VALUES(bk),
         avg = VALUES(avg),
         obp = VALUES(obp),
         slg = VALUES(slg),
@@ -232,7 +323,7 @@ def upsert_situational_stat(stat_row):
         stat_row['split_type'], stat_row['split_key'], stat_row.get('pa'), stat_row.get('ab'),
         stat_row.get('h'), stat_row.get('double_hits'), stat_row.get('triple_hits'), stat_row.get('hr'),
         stat_row.get('rbi'), stat_row.get('bb'), stat_row.get('hbp'), stat_row.get('so'),
-        stat_row.get('gidp'), stat_row.get('avg'), stat_row.get('obp'), stat_row.get('slg'),
+        stat_row.get('gidp'), stat_row.get('wp'), stat_row.get('bk'), stat_row.get('avg'), stat_row.get('obp'), stat_row.get('slg'),
         stat_row.get('ops'), stat_row.get('source_updated_at'),
     )
     try:
@@ -260,21 +351,21 @@ def search_players_by_name(name_query):
         conn.close()
 
 
-def get_player_situational_stats(player_id, season, split_key):
+def get_player_situational_stats(player_id, season, split_key, split_type='runner_state'):
     conn = _connect()
     cursor = conn.cursor()
     columns = [
         'season', 'entity_type', 'entity_id', 'team_name', 'split_type', 'split_key', 'pa', 'ab', 'h',
-        'double_hits', 'triple_hits', 'hr', 'rbi', 'bb', 'hbp', 'so', 'gidp', 'avg', 'obp', 'slg', 'ops',
+        'double_hits', 'triple_hits', 'hr', 'rbi', 'bb', 'hbp', 'so', 'gidp', 'wp', 'bk', 'avg', 'obp', 'slg', 'ops',
         'source_updated_at',
     ]
     try:
         cursor.execute("""
         SELECT season, entity_type, entity_id, team_name, split_type, split_key, pa, ab, h,
-               double_hits, triple_hits, hr, rbi, bb, hbp, so, gidp, avg, obp, slg, ops, source_updated_at
+               double_hits, triple_hits, hr, rbi, bb, hbp, so, gidp, wp, bk, avg, obp, slg, ops, source_updated_at
         FROM situational_stats
-        WHERE entity_type = 'player' AND entity_id = %s AND season = %s AND split_type = 'runner_state' AND split_key = %s
-        """, (player_id, season, split_key))
+        WHERE entity_type = 'player' AND entity_id = %s AND season = %s AND split_type = %s AND split_key = %s
+        """, (player_id, season, split_type, split_key))
         row = cursor.fetchone()
         if row is None:
             return None
@@ -360,6 +451,21 @@ def get_last_situational_stats_update():
         if row is None:
             return None
         return row[0]
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def has_situational_stats(split_type):
+    conn = _connect()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+        SELECT 1 FROM situational_stats
+        WHERE entity_type = 'player' AND split_type = %s
+        LIMIT 1
+        """, (split_type,))
+        return cursor.fetchone() is not None
     finally:
         cursor.close()
         conn.close()
