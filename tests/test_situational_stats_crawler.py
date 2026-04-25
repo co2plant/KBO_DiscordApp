@@ -61,6 +61,21 @@ class TestSituationalSourceFixtures(unittest.TestCase):
         self.assertIn('KIWOOM HEROES', html)
         self.assertIn('pcode=67341', html)
 
+    def test_pitcher_summary_fixture_profile_shape(self):
+        html = _fixture('kbo_pitcher_summary_77637.html')
+
+        for label in ('Name', 'Position', 'No', 'Salary', 'Born', 'Debut', 'HT/WT', 'Transaction'):
+            self.assertIn(label, html)
+        self.assertIn('KIA TIGERS', html)
+        self.assertIn('pcode=77637', html)
+
+    def test_pitcher_count_fixture_shape(self):
+        html = _fixture('kbo_pitcher_situations_count_77637.html')
+
+        for label in ('COUNT(B-S)', 'H', '2B', '3B', 'HR', 'BB', 'HBP', 'K', 'WP', 'BK', 'OAVG'):
+            self.assertIn(label, html)
+        self.assertIn('0-0', html)
+
     def test_team_runner_state_source_decision(self):
         html = _fixture('kbo_batting_by_teams.html')
 
@@ -106,6 +121,16 @@ class TestPlayerProfileParser(unittest.TestCase):
         self.assertEqual(profile['debut'], '17')
         self.assertIsNotNone(profile['updated_at'])
 
+    def test_parse_pitcher_profile_from_summary_fixture(self):
+        crawler = _load_crawler_module()
+        profile = crawler.parse_player_profile(_fixture('kbo_pitcher_summary_77637.html'), '77637')
+
+        self.assertEqual(profile['player_id'], '77637')
+        self.assertEqual(profile['team_name'], 'KIA TIGERS')
+        self.assertEqual(profile['name'], 'YANG Hyeon Jong')
+        self.assertEqual(profile['position'], 'Pitcher')
+        self.assertEqual(profile['born'], '01/03/1988')
+
 
 class TestRunnerStateParser(unittest.TestCase):
     def test_parse_runner_state_rows_from_fixture(self):
@@ -147,6 +172,94 @@ class TestRunnerStateParser(unittest.TestCase):
         self.assertFalse(refreshed)
         self.assertEqual(calls, ['checked'])
 
+    def test_refresh_continues_when_count_state_rows_are_missing(self):
+        crawler = _load_crawler_module()
+
+        class _FakeDatabase:
+            def __init__(self):
+                self.players = []
+                self.stats = []
+                self.exports = []
+
+            def should_refresh_situational_stats(self, _now):
+                return False
+
+            def has_situational_stats(self, split_type):
+                return split_type != 'count_state'
+
+            def upsert_player(self, player_row):
+                self.players.append(player_row)
+
+            def upsert_situational_stat(self, stat_row):
+                self.stats.append(stat_row)
+
+            def export_sql_snapshot(self):
+                self.exports.append('exported')
+                return 'data/sql_dumps/kbo_latest.sql'
+
+        class _FakeDriver:
+            def __init__(self):
+                self.page_source = ''
+                self.urls = []
+                self.quit_called = False
+
+            def get(self, url):
+                self.urls.append(url)
+                if 'BattingByTeams' in url:
+                    self.page_source = ''
+                elif 'PitchingLeaders' in url:
+                    self.page_source = _fixture('kbo_pitching_leaders.html')
+                elif 'PlayerInfoPitcher/Summary' in url:
+                    self.page_source = _fixture('kbo_pitcher_summary_77637.html')
+                elif 'PlayerInfoPitcher/SituationsCount' in url:
+                    self.page_source = _fixture('kbo_pitcher_situations_count_77637.html')
+
+            def quit(self):
+                self.quit_called = True
+
+        fake_driver = _FakeDriver()
+        fake_database = _FakeDatabase()
+        setattr(crawler, 'database', fake_database)
+        setattr(crawler, '_create_driver', lambda: fake_driver)
+
+        self.assertTrue(crawler.refresh_situational_stats_if_stale(2026))
+        self.assertTrue(any('PitchingLeaders' in url for url in fake_driver.urls))
+        self.assertTrue(fake_database.players)
+        self.assertTrue(fake_database.stats)
+        self.assertEqual(fake_database.exports, ['exported'])
+        self.assertTrue(fake_driver.quit_called)
+
+
+class TestPitcherCountParser(unittest.TestCase):
+    def test_normalizes_pitcher_count_labels(self):
+        crawler = _load_crawler_module()
+
+        self.assertEqual(crawler.normalize_count_state_label('0-0'), 'count_0_0')
+        self.assertEqual(crawler.normalize_count_state_label(' 3-2 '), 'count_3_2')
+        self.assertIsNone(crawler.normalize_count_state_label('BAD'))
+
+    def test_parse_pitcher_count_rows_from_fixture(self):
+        crawler = _load_crawler_module()
+        rows = crawler.parse_pitcher_count_stats(
+            _fixture('kbo_pitcher_situations_count_77637.html'),
+            player_id='77637',
+            team_name='KIA TIGERS',
+            season=2026,
+            source_updated_at='2026-04-24 00:00:00',
+        )
+
+        split_keys = {row['split_key'] for row in rows}
+        self.assertIn('count_0_0', split_keys)
+        self.assertIn('count_0_2', split_keys)
+        count_0_2 = next(row for row in rows if row['split_key'] == 'count_0_2')
+        self.assertEqual(count_0_2['split_type'], 'count_state')
+        self.assertEqual(count_0_2['h'], 1)
+        self.assertEqual(count_0_2['so'], 5)
+        self.assertEqual(count_0_2['bb'], 1)
+        self.assertEqual(count_0_2['avg'], 0.083)
+        self.assertEqual(count_0_2['wp'], 0)
+        self.assertEqual(count_0_2['bk'], 0)
+
 
 class TestPlayerDiscovery(unittest.TestCase):
     def test_discovers_hitter_player_ids_from_fixture(self):
@@ -155,6 +268,40 @@ class TestPlayerDiscovery(unittest.TestCase):
 
         self.assertEqual(player_ids, ['67341', '50054'])
         self.assertTrue(all(player_id.isdigit() for player_id in player_ids))
+
+    def test_discovers_pitcher_player_ids_from_fixture(self):
+        crawler = _load_crawler_module()
+        player_ids = crawler.discover_pitcher_player_ids(_fixture('kbo_pitching_leaders.html'))
+
+        self.assertEqual(player_ids, ['77637', '65769'])
+        self.assertTrue(all(player_id.isdigit() for player_id in player_ids))
+
+
+class TestSqlSnapshotExport(unittest.TestCase):
+    def test_export_snapshot_safely_delegates_to_database(self):
+        crawler = _load_crawler_module()
+        calls = []
+
+        class _FakeDatabase:
+            def export_sql_snapshot(self):
+                calls.append('exported')
+                return 'data/sql_dumps/kbo_latest.sql'
+
+        setattr(crawler, 'database', _FakeDatabase())
+
+        self.assertEqual(crawler._export_sql_snapshot_safely(), 'data/sql_dumps/kbo_latest.sql')
+        self.assertEqual(calls, ['exported'])
+
+    def test_export_snapshot_safely_does_not_fail_crawler(self):
+        crawler = _load_crawler_module()
+
+        class _FakeDatabase:
+            def export_sql_snapshot(self):
+                raise RuntimeError('disk full')
+
+        setattr(crawler, 'database', _FakeDatabase())
+
+        self.assertIsNone(crawler._export_sql_snapshot_safely())
 
 
 if __name__ == '__main__':

@@ -13,6 +13,16 @@ def _create_driver():
     return webdriver.Chrome(options)
 
 
+def _export_sql_snapshot_safely():
+    try:
+        dump_path = database.export_sql_snapshot()
+        print(f'Exported SQL snapshot: {dump_path}')
+        return dump_path
+    except Exception as exc:
+        print(f'Error exporting SQL snapshot: {exc}')
+        return None
+
+
 def _build_game_id(selected_date, game_index):
     return f'{selected_date}{game_index:02d}'
 
@@ -126,6 +136,24 @@ def discover_hitter_player_ids(html):
             seen.add(player_id)
             player_ids.append(player_id)
     return player_ids
+
+
+def discover_pitcher_player_ids(html):
+    seen = set()
+    player_ids = []
+    for player_id in re.findall(r'playerinfopitcher/summary\.aspx\?pcode=(\d+)', html, re.IGNORECASE):
+        if player_id not in seen:
+            seen.add(player_id)
+            player_ids.append(player_id)
+    return player_ids
+
+
+def normalize_count_state_label(label):
+    normalized = label.strip()
+    if re.fullmatch(r'[0-3]-[0-2]', normalized) is None:
+        return None
+    balls, strikes = normalized.split('-')
+    return f'count_{balls}_{strikes}'
 
 
 class _TextParser(HTMLParser):
@@ -243,12 +271,51 @@ def parse_runner_state_stats(html, player_id, team_name, season, source_updated_
     return []
 
 
+def parse_pitcher_count_stats(html, player_id, team_name, season, source_updated_at=None):
+    for table in _parse_tables(html):
+        if not table:
+            continue
+        header = [cell.upper() for cell in table[0]]
+        if 'COUNT(B-S)' not in header:
+            continue
+        column_index = {name: index for index, name in enumerate(header)}
+        rows = []
+        for cells in table[1:]:
+            count_label = cells[column_index['COUNT(B-S)']] if column_index['COUNT(B-S)'] < len(cells) else ''
+            split_key = normalize_count_state_label(count_label)
+            if split_key is None:
+                continue
+            rows.append({
+                'season': season,
+                'entity_type': 'player',
+                'entity_id': player_id,
+                'team_name': team_name,
+                'split_type': 'count_state',
+                'split_key': split_key,
+                'h': _parse_int(cells[column_index['H']]),
+                'double_hits': _parse_int(cells[column_index['2B']]),
+                'triple_hits': _parse_int(cells[column_index['3B']]),
+                'hr': _parse_int(cells[column_index['HR']]),
+                'bb': _parse_int(cells[column_index['BB']]),
+                'hbp': _parse_int(cells[column_index['HBP']]),
+                'so': _parse_int(cells[column_index['K']]),
+                'wp': _parse_int(cells[column_index['WP']]),
+                'bk': _parse_int(cells[column_index['BK']]),
+                'avg': _parse_decimal(cells[column_index['OAVG']]),
+                'source_updated_at': source_updated_at,
+            })
+        return rows
+    return []
+
+
 def refresh_situational_stats_if_stale(season=None):
     if season is None:
         season = datetime.now().year
     now = datetime.now()
     if not database.should_refresh_situational_stats(now):
-        return False
+        has_count_state_rows = getattr(database, 'has_situational_stats', lambda _split_type: True)('count_state')
+        if has_count_state_rows:
+            return False
 
     driver = None
     try:
@@ -267,6 +334,20 @@ def refresh_situational_stats_if_stale(season=None):
             rows = parse_runner_state_stats(driver.page_source, player_id, profile['team_name'], season, source_updated_at)
             for row in rows:
                 database.upsert_situational_stat(row)
+
+        driver.get('https://eng.koreabaseball.com/Stats/PitchingLeaders.aspx')
+        pitcher_ids = discover_pitcher_player_ids(driver.page_source)
+        for player_id in pitcher_ids:
+            driver.get(f'https://eng.koreabaseball.com/Teams/PlayerInfoPitcher/Summary.aspx?pcode={player_id}')
+            profile = parse_player_profile(driver.page_source, player_id)
+            profile['updated_at'] = source_updated_at
+            database.upsert_player(profile)
+
+            driver.get(f'https://eng.koreabaseball.com/Teams/PlayerInfoPitcher/SituationsCount.aspx?pcode={player_id}')
+            rows = parse_pitcher_count_stats(driver.page_source, player_id, profile['team_name'], season, source_updated_at)
+            for row in rows:
+                database.upsert_situational_stat(row)
+        _export_sql_snapshot_safely()
         return True
     finally:
         if driver is not None:
@@ -284,15 +365,16 @@ def insert_standings():
             tds = row.find_elements(By.TAG_NAME, 'td')
             id = tds[0].text
             team = tds[1].text
-            win = tds[2].text
-            lose = tds[3].text
-            draw = tds[4].text
+            win = tds[3].text
+            lose = tds[4].text
+            draw = tds[5].text
             rate = tds[6].text
             last_10 = tds[8].text
             streak = tds[9].text
             home = tds[10].text
             away = tds[11].text
             database.insert_standings([id, team, win, lose, draw, rate, last_10, streak, home, away])
+        _export_sql_snapshot_safely()
     finally:
         if driver is not None:
             driver.quit()
@@ -309,15 +391,16 @@ def update_standings():
             tds = row.find_elements(By.TAG_NAME, 'td')
             id = tds[0].text
             team = tds[1].text
-            win = tds[2].text
-            lose = tds[3].text
-            draw = tds[4].text
+            win = tds[3].text
+            lose = tds[4].text
+            draw = tds[5].text
             rate = tds[6].text
             last_10 = tds[8].text
             streak = tds[9].text
             home = tds[10].text
             away = tds[11].text
             database.update_standings([id, team, win, lose, draw, rate, last_10, streak, home, away])
+        _export_sql_snapshot_safely()
     finally:
         if driver is not None:
             driver.quit()
@@ -371,6 +454,7 @@ def update_schedule_once(selected_date):
                         else:
                             team[j]+=word
                 database.update_game_and_score([game_id, tds[0].text, team[0], score[0], score[1], team[1], tds[6].text, tds[7].text])
+        _export_sql_snapshot_safely()
     finally:
         if driver is not None:
             driver.quit()
@@ -464,6 +548,7 @@ def insert_schedule_month():
             incount+=1
 
             database.insert_game_and_score([id_format, separated_row[i], team[0], score[0], score[1], team[1], separated_row[-2], separated_row[-1]])
+        _export_sql_snapshot_safely()
     finally:
         if driver is not None:
             driver.quit()
