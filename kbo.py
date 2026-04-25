@@ -126,6 +126,9 @@ async def ensure_data_ready():
         if not await asyncio.to_thread(database.has_standings_data):
             print('Bootstrapping standings data...')
             await asyncio.to_thread(kbo_crawler.insert_standings)
+        else:
+            print('Refreshing standings data...')
+            await asyncio.to_thread(kbo_crawler.update_standings)
 
         if not await asyncio.to_thread(database.has_schedule_data):
             print('Bootstrapping schedule data...')
@@ -199,6 +202,12 @@ RUNNER_STATE_INPUT_ALIASES = {
     '득점권': 'scoring_position',
 }
 
+COUNT_STATE_SPLIT_LABELS = {
+    f'count_{balls}_{strikes}': f'{balls}-{strikes}'
+    for balls in range(4)
+    for strikes in range(3)
+}
+
 TEAM_SITUATIONAL_ALIASES = {
     'KT': 'KT WIZ',
     '케이티': 'KT WIZ',
@@ -228,6 +237,20 @@ def resolve_runner_state_input(value: str) -> Optional[str]:
     if normalized in VISIBLE_RUNNER_STATE_SPLIT_KEYS:
         return normalized
     return RUNNER_STATE_INPUT_ALIASES.get(normalized)
+
+
+def resolve_count_state_input(value: str) -> Optional[str]:
+    normalized = value.strip()
+    if normalized in COUNT_STATE_SPLIT_LABELS:
+        return normalized
+    parts = normalized.split('-')
+    if len(parts) != 2:
+        return None
+    if not all(part.isdigit() for part in parts):
+        return None
+    balls, strikes = int(parts[0]), int(parts[1])
+    split_key = f'count_{balls}_{strikes}'
+    return split_key if split_key in COUNT_STATE_SPLIT_LABELS else None
 
 
 def resolve_situational_team_input(team: str) -> str:
@@ -265,6 +288,20 @@ def _player_id(player_row) -> str:
     return player_row[0]
 
 
+def _player_role(player_row) -> str:
+    if isinstance(player_row, dict):
+        position = player_row.get('position')
+    elif len(player_row) > 3:
+        position = player_row[3]
+    else:
+        position = None
+    return 'pitcher' if str(position or '').strip().lower() == 'pitcher' else 'hitter'
+
+
+def _player_role_label(player_row) -> str:
+    return '투수' if _player_role(player_row) == 'pitcher' else '타자'
+
+
 def build_player_situational_model(player_row, stat_row, split_label: str):
     return {
         'title': f'{_player_team_name(player_row)} {_player_display_name(player_row)} 상황 성적',
@@ -272,6 +309,17 @@ def build_player_situational_model(player_row, stat_row, split_label: str):
             ('상황', split_label),
             ('비율', f"AVG {_format_rate(stat_row.get('avg'))} / OBP {_format_rate(stat_row.get('obp'))} / SLG {_format_rate(stat_row.get('slg'))} / OPS {_format_rate(stat_row.get('ops'))}"),
             ('누적', f"PA {_format_count(stat_row.get('pa'))} / AB {_format_count(stat_row.get('ab'))} / H {_format_count(stat_row.get('h'))} / HR {_format_count(stat_row.get('hr'))} / RBI {_format_count(stat_row.get('rbi'))}"),
+        ],
+    }
+
+
+def build_pitcher_situational_model(player_row, stat_row, split_label: str):
+    return {
+        'title': f'{_player_team_name(player_row)} {_player_display_name(player_row)} 투수 상황 성적',
+        'fields': [
+            ('카운트', split_label),
+            ('피안타율', f"OAVG {_format_rate(stat_row.get('avg'))}"),
+            ('누적', f"H {_format_count(stat_row.get('h'))} / 2B {_format_count(stat_row.get('double_hits'))} / 3B {_format_count(stat_row.get('triple_hits'))} / HR {_format_count(stat_row.get('hr'))} / BB {_format_count(stat_row.get('bb'))} / HBP {_format_count(stat_row.get('hbp'))} / K {_format_count(stat_row.get('so'))} / WP {_format_count(stat_row.get('wp'))} / BK {_format_count(stat_row.get('bk'))}"),
         ],
     }
 
@@ -292,6 +340,14 @@ def build_team_situational_model(team_name: str, aggregate_row, leader_rows, spl
 
 
 def build_player_comparison_model(player_one, stat_one, player_two, stat_two, split_label: str):
+    if _player_role(player_one) == 'pitcher' and _player_role(player_two) == 'pitcher':
+        return {
+            'title': f'{split_label} 투수 비교',
+            'fields': [
+                (_player_display_name(player_one), f"OAVG {_format_rate(stat_one.get('avg'))} / H {_format_count(stat_one.get('h'))} / HR {_format_count(stat_one.get('hr'))} / BB {_format_count(stat_one.get('bb'))} / K {_format_count(stat_one.get('so'))} / WP {_format_count(stat_one.get('wp'))} / BK {_format_count(stat_one.get('bk'))}"),
+                (_player_display_name(player_two), f"OAVG {_format_rate(stat_two.get('avg'))} / H {_format_count(stat_two.get('h'))} / HR {_format_count(stat_two.get('hr'))} / BB {_format_count(stat_two.get('bb'))} / K {_format_count(stat_two.get('so'))} / WP {_format_count(stat_two.get('wp'))} / BK {_format_count(stat_two.get('bk'))}"),
+            ],
+        }
     return {
         'title': f'{split_label} 선수 비교',
         'fields': [
@@ -299,6 +355,14 @@ def build_player_comparison_model(player_one, stat_one, player_two, stat_two, sp
             (_player_display_name(player_two), f"AVG {_format_rate(stat_two.get('avg'))} / OPS {_format_rate(stat_two.get('ops'))} / PA {_format_count(stat_two.get('pa'))} / HR {_format_count(stat_two.get('hr'))} / RBI {_format_count(stat_two.get('rbi'))}"),
         ],
     }
+
+
+def build_role_mismatch_message(player_one, player_two) -> str:
+    return (
+        '서로 다른 역할의 선수는 비교할 수 없습니다: '
+        f"{_player_display_name(player_one)}({_player_role_label(player_one)}) vs "
+        f"{_player_display_name(player_two)}({_player_role_label(player_two)})."
+    )
 
 
 def _model_to_embed(model):
@@ -346,7 +410,7 @@ async def parade_rest(interaction: discord.Interaction):
 async def as_you_were(interaction: discord.Interaction):
     await interaction.response.send_message(f'쉬어!')
 
-@tasks.loop(time=dt_time(hour=6, tzinfo=KST))
+@tasks.loop(minutes=30)
 async def update_tables():
     await asyncio.to_thread(kbo_crawler.update_standings)
     await asyncio.to_thread(kbo_crawler.update_schedule_once, datetime.now(KST).strftime('%m%d'))
@@ -421,29 +485,43 @@ async def team_standings(interaction: discord.Interaction, team: str):
     await interaction.followup.send(embed=embed)
 
 
-@client.tree.command(name='상황성적', description='선택한 선수의 주자 상황별 타격 성적을 보여줍니다.')
-@app_commands.describe(player='상황 성적을 확인할 선수 이름', situation='예: 만루, 득점권, 주자없음')
+@client.tree.command(name='상황성적', description='선택한 선수의 역할별 상황 성적을 보여줍니다.')
+@app_commands.describe(player='상황 성적을 확인할 선수 이름', situation='타자 예: 만루, 득점권 / 투수 예: 0-0, 0-2')
 async def player_situational_stats(interaction: discord.Interaction, player: str, situation: str):
     await interaction.response.defer(thinking=True)
     await ensure_data_ready()
-
-    split_key = resolve_runner_state_input(situation)
-    if split_key is None:
-        await _send_text(interaction, f'{situation} 상황은 지원하지 않습니다.')
-        return
 
     player_row, error_message = _resolve_single_player(player)
     if error_message is not None:
         await _send_text(interaction, error_message)
         return
 
+    player_role = _player_role(player_row)
+    if player_role == 'pitcher':
+        split_key = resolve_count_state_input(situation)
+        if split_key is None:
+            await _send_text(interaction, f'{situation} 투수 카운트 상황은 지원하지 않습니다.')
+            return
+        split_label = COUNT_STATE_SPLIT_LABELS[split_key]
+        split_type = 'count_state'
+    else:
+        split_key = resolve_runner_state_input(situation)
+        if split_key is None:
+            await _send_text(interaction, f'{situation} 주자 상황은 지원하지 않습니다.')
+            return
+        split_label = RUNNER_STATE_SPLIT_LABELS[split_key]
+        split_type = 'runner_state'
+
     season = datetime.now(KST).year
-    stat_row = database.get_player_situational_stats(_player_id(player_row), season, split_key)
+    stat_row = database.get_player_situational_stats(_player_id(player_row), season, split_key, split_type=split_type)
     if stat_row is None:
-        await _send_text(interaction, f'{player} 선수의 {RUNNER_STATE_SPLIT_LABELS[split_key]} 상황 성적을 찾을 수 없습니다.')
+        await _send_text(interaction, f'{player} 선수의 {split_label} 상황 성적을 찾을 수 없습니다.')
         return
 
-    model = build_player_situational_model(player_row, stat_row, RUNNER_STATE_SPLIT_LABELS[split_key])
+    if player_role == 'pitcher':
+        model = build_pitcher_situational_model(player_row, stat_row, split_label)
+    else:
+        model = build_player_situational_model(player_row, stat_row, split_label)
     await interaction.followup.send(embed=_model_to_embed(model))
 
 
@@ -470,16 +548,11 @@ async def team_situational_stats(interaction: discord.Interaction, team: str, si
     await interaction.followup.send(embed=_model_to_embed(model))
 
 
-@client.tree.command(name='선수비교', description='두 선수의 같은 주자 상황별 타격 성적을 비교합니다.')
-@app_commands.describe(player_one='첫 번째 선수 이름', player_two='두 번째 선수 이름', situation='예: 만루, 득점권, 주자없음')
+@client.tree.command(name='선수비교', description='두 선수의 같은 역할별 상황 성적을 비교합니다.')
+@app_commands.describe(player_one='첫 번째 선수 이름', player_two='두 번째 선수 이름', situation='타자 예: 만루, 득점권 / 투수 예: 0-0, 0-2')
 async def compare_player_situational_stats(interaction: discord.Interaction, player_one: str, player_two: str, situation: str):
     await interaction.response.defer(thinking=True)
     await ensure_data_ready()
-
-    split_key = resolve_runner_state_input(situation)
-    if split_key is None:
-        await _send_text(interaction, f'{situation} 상황은 지원하지 않습니다.')
-        return
 
     first_player, first_error = _resolve_single_player(player_one)
     if first_error is not None:
@@ -491,14 +564,35 @@ async def compare_player_situational_stats(interaction: discord.Interaction, pla
         await _send_text(interaction, f'선수2: {second_error}')
         return
 
-    season = datetime.now(KST).year
-    first_stat = database.get_player_situational_stats(_player_id(first_player), season, split_key)
-    second_stat = database.get_player_situational_stats(_player_id(second_player), season, split_key)
-    if first_stat is None or second_stat is None:
-        await _send_text(interaction, f'{RUNNER_STATE_SPLIT_LABELS[split_key]} 상황 비교 데이터를 찾을 수 없습니다.')
+    first_role = _player_role(first_player)
+    second_role = _player_role(second_player)
+    if first_role != second_role:
+        await _send_text(interaction, build_role_mismatch_message(first_player, second_player))
         return
 
-    model = build_player_comparison_model(first_player, first_stat, second_player, second_stat, RUNNER_STATE_SPLIT_LABELS[split_key])
+    if first_role == 'pitcher':
+        split_key = resolve_count_state_input(situation)
+        if split_key is None:
+            await _send_text(interaction, f'{situation} 투수 카운트 상황은 지원하지 않습니다.')
+            return
+        split_label = COUNT_STATE_SPLIT_LABELS[split_key]
+        split_type = 'count_state'
+    else:
+        split_key = resolve_runner_state_input(situation)
+        if split_key is None:
+            await _send_text(interaction, f'{situation} 주자 상황은 지원하지 않습니다.')
+            return
+        split_label = RUNNER_STATE_SPLIT_LABELS[split_key]
+        split_type = 'runner_state'
+
+    season = datetime.now(KST).year
+    first_stat = database.get_player_situational_stats(_player_id(first_player), season, split_key, split_type=split_type)
+    second_stat = database.get_player_situational_stats(_player_id(second_player), season, split_key, split_type=split_type)
+    if first_stat is None or second_stat is None:
+        await _send_text(interaction, f'{split_label} 상황 비교 데이터를 찾을 수 없습니다.')
+        return
+
+    model = build_player_comparison_model(first_player, first_stat, second_player, second_stat, split_label)
     await interaction.followup.send(embed=_model_to_embed(model))
 
 @client.tree.command(name='일정', description='돌승엽이 KBO 경기 일정을 당신에게 보여줍니다.')

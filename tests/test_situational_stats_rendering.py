@@ -17,19 +17,25 @@ def _load_render_namespace():
         'RUNNER_STATE_SPLIT_LABELS',
         'RUNNER_STATE_INPUT_ALIASES',
         'TEAM_SITUATIONAL_ALIASES',
+        'COUNT_STATE_SPLIT_LABELS',
     }
     wanted_functions = {
         'resolve_runner_state_input',
+        'resolve_count_state_input',
         'resolve_situational_team_input',
         '_normalize_team_name',
         '_format_rate',
         '_format_count',
+        '_player_role',
+        '_player_role_label',
         '_player_display_name',
         '_player_team_name',
         '_player_id',
         'build_player_situational_model',
+        'build_pitcher_situational_model',
         'build_team_situational_model',
         'build_player_comparison_model',
+        'build_role_mismatch_message',
         '_describe_player_candidates',
         '_send_text',
     }
@@ -83,6 +89,14 @@ class TestSituationalSplitChoices(unittest.TestCase):
         self.assertEqual(resolve('bases_empty'), 'bases_empty')
         self.assertIsNone(resolve('알수없음'))
 
+    def test_pitcher_count_aliases_resolve_to_split_keys(self):
+        namespace = _load_render_namespace()
+        resolve = cast(Callable[[str], str | None], namespace['resolve_count_state_input'])
+
+        self.assertEqual(resolve('0-0'), 'count_0_0')
+        self.assertEqual(resolve(' 3-2 '), 'count_3_2')
+        self.assertIsNone(resolve('4-2'))
+
     def test_team_aliases_resolve_to_official_situational_team_names(self):
         namespace = _load_render_namespace()
         resolve = cast(Callable[[str], str], namespace['resolve_situational_team_input'])
@@ -108,6 +122,42 @@ class TestSituationalCommandRendering(unittest.TestCase):
         self.assertIn('만루', rendered)
         for label in ('AVG', 'OBP', 'SLG', 'OPS', 'PA', 'AB', 'H', 'HR', 'RBI'):
             self.assertIn(label, rendered)
+
+    def test_pitcher_situational_embed_from_seeded_count_row(self):
+        namespace = _load_render_namespace()
+        build = cast(Callable[..., dict[str, object]], namespace['build_pitcher_situational_model'])
+        player = {'player_id': '77637', 'team_name': 'KIA TIGERS', 'name': 'YANG Hyeon Jong', 'position': 'Pitcher'}
+        stat = {'avg': 0.083, 'h': 1, 'double_hits': 0, 'triple_hits': 0, 'hr': 0, 'bb': 1, 'hbp': 0, 'so': 5, 'wp': 0, 'bk': 0}
+
+        model = build(player, stat, '0-2')
+
+        self.assertIn('KIA TIGERS YANG Hyeon Jong', cast(str, model['title']))
+        fields = cast(list[tuple[str, str]], model['fields'])
+        rendered = '\n'.join(value for _, value in fields)
+        self.assertIn('0-2', rendered)
+        for label in ('OAVG', 'H', '2B', '3B', 'HR', 'BB', 'HBP', 'K', 'WP', 'BK'):
+            self.assertIn(label, rendered)
+
+    def test_player_role_comes_from_position(self):
+        namespace = _load_render_namespace()
+        player_role = cast(Callable[[object], str], namespace['_player_role'])
+
+        self.assertEqual(player_role({'position': 'Pitcher'}), 'pitcher')
+        self.assertEqual(player_role({'position': 'Outfielder'}), 'hitter')
+        self.assertEqual(player_role(('1', 'KIA', 'A', 'Pitcher')), 'pitcher')
+
+    def test_role_mismatch_message_names_both_roles(self):
+        namespace = _load_render_namespace()
+        build = cast(Callable[..., str], namespace['build_role_mismatch_message'])
+        hitter = {'team_name': 'KIWOOM', 'name': 'LEE Jung Hoo', 'position': 'Outfielder'}
+        pitcher = {'team_name': 'KIA', 'name': 'YANG Hyeon Jong', 'position': 'Pitcher'}
+
+        message = build(hitter, pitcher)
+
+        self.assertIn('타자', message)
+        self.assertIn('투수', message)
+        self.assertIn('LEE Jung Hoo', message)
+        self.assertIn('YANG Hyeon Jong', message)
 
     def test_text_reply_helper_suppresses_allowed_mentions(self):
         tree = _read_ast('kbo.py')
@@ -174,6 +224,22 @@ class TestSituationalCommandRendering(unittest.TestCase):
         self.assertIn('A', rendered)
         self.assertIn('B', rendered)
         for label in ('AVG', 'OPS', 'PA', 'HR', 'RBI'):
+            self.assertIn(label, rendered)
+
+    def test_pitcher_comparison_embed_uses_pitching_metrics(self):
+        namespace = _load_render_namespace()
+        build = cast(Callable[..., dict[str, object]], namespace['build_player_comparison_model'])
+        player_one = {'player_id': '1', 'team_name': 'KIA', 'name': 'A', 'position': 'Pitcher'}
+        player_two = {'player_id': '2', 'team_name': 'LG', 'name': 'B', 'position': 'Pitcher'}
+        stat_one = {'avg': 0.083, 'h': 1, 'hr': 0, 'bb': 1, 'so': 5, 'wp': 0, 'bk': 0}
+        stat_two = {'avg': 0.200, 'h': 2, 'hr': 0, 'bb': 0, 'so': 2, 'wp': 1, 'bk': 0}
+
+        model = build(player_one, stat_one, player_two, stat_two, '0-2')
+
+        self.assertIn('투수 비교', cast(str, model['title']))
+        fields = cast(list[tuple[str, str]], model['fields'])
+        rendered = '\n'.join([name + value for name, value in fields])
+        for label in ('OAVG', 'H', 'HR', 'BB', 'K', 'WP', 'BK'):
             self.assertIn(label, rendered)
 
 
