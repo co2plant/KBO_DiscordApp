@@ -131,6 +131,8 @@ async def ensure_data_ready():
             print('Bootstrapping schedule data...')
             await asyncio.to_thread(kbo_crawler.insert_schedule_month)
 
+        await asyncio.to_thread(kbo_crawler.refresh_situational_stats_if_stale, datetime.now(KST).year)
+
         _data_ready = True
 
 
@@ -157,6 +159,172 @@ def _is_hot_streak(streak: str) -> bool:
     win_count = streak.removesuffix('승')
     return win_count.isdigit() and int(win_count) >= 3
 
+
+VISIBLE_RUNNER_STATE_SPLIT_KEYS = (
+    'bases_empty',
+    'runner_on_1',
+    'runner_on_2',
+    'runner_on_3',
+    'runner_on_1_2',
+    'runner_on_1_3',
+    'runner_on_2_3',
+    'bases_loaded',
+    'scoring_position',
+)
+
+RUNNER_STATE_SPLIT_LABELS = {
+    'bases_empty': '주자없음',
+    'runner_on_1': '1루',
+    'runner_on_2': '2루',
+    'runner_on_3': '3루',
+    'runner_on_1_2': '1·2루',
+    'runner_on_1_3': '1·3루',
+    'runner_on_2_3': '2·3루',
+    'bases_loaded': '만루',
+    'scoring_position': '득점권',
+}
+
+RUNNER_STATE_INPUT_ALIASES = {
+    '주자없음': 'bases_empty',
+    '1루': 'runner_on_1',
+    '2루': 'runner_on_2',
+    '3루': 'runner_on_3',
+    '1,2루': 'runner_on_1_2',
+    '1·2루': 'runner_on_1_2',
+    '1,3루': 'runner_on_1_3',
+    '1·3루': 'runner_on_1_3',
+    '2,3루': 'runner_on_2_3',
+    '2·3루': 'runner_on_2_3',
+    '만루': 'bases_loaded',
+    '득점권': 'scoring_position',
+}
+
+TEAM_SITUATIONAL_ALIASES = {
+    'KT': 'KT WIZ',
+    '케이티': 'KT WIZ',
+    '두산': 'DOOSAN BEARS',
+    'DOOSAN': 'DOOSAN BEARS',
+    'KIA': 'KIA TIGERS',
+    '기아': 'KIA TIGERS',
+    'NC': 'NC DINOS',
+    '엔씨': 'NC DINOS',
+    '키움': 'KIWOOM HEROES',
+    'KIWOOM': 'KIWOOM HEROES',
+    'LG': 'LG TWINS',
+    '엘지': 'LG TWINS',
+    '삼성': 'SAMSUNG LIONS',
+    'SAMSUNG': 'SAMSUNG LIONS',
+    '롯데': 'LOTTE GIANTS',
+    'LOTTE': 'LOTTE GIANTS',
+    'SSG': 'SSG LANDERS',
+    '에스에스지': 'SSG LANDERS',
+    '한화': 'HANWHA EAGLES',
+    'HANWHA': 'HANWHA EAGLES',
+}
+
+
+def resolve_runner_state_input(value: str) -> Optional[str]:
+    normalized = value.strip()
+    if normalized in VISIBLE_RUNNER_STATE_SPLIT_KEYS:
+        return normalized
+    return RUNNER_STATE_INPUT_ALIASES.get(normalized)
+
+
+def resolve_situational_team_input(team: str) -> str:
+    normalized = _normalize_team_name(team)
+    return TEAM_SITUATIONAL_ALIASES.get(normalized, normalized)
+
+
+def _format_rate(value) -> str:
+    if value is None:
+        return '-'
+    return f'{float(value):.3f}'
+
+
+def _format_count(value) -> str:
+    if value is None:
+        return '0'
+    return str(value)
+
+
+def _player_display_name(player_row) -> str:
+    if isinstance(player_row, dict):
+        return player_row['name']
+    return player_row[2]
+
+
+def _player_team_name(player_row) -> str:
+    if isinstance(player_row, dict):
+        return player_row['team_name']
+    return player_row[1]
+
+
+def _player_id(player_row) -> str:
+    if isinstance(player_row, dict):
+        return player_row['player_id']
+    return player_row[0]
+
+
+def build_player_situational_model(player_row, stat_row, split_label: str):
+    return {
+        'title': f'{_player_team_name(player_row)} {_player_display_name(player_row)} 상황 성적',
+        'fields': [
+            ('상황', split_label),
+            ('비율', f"AVG {_format_rate(stat_row.get('avg'))} / OBP {_format_rate(stat_row.get('obp'))} / SLG {_format_rate(stat_row.get('slg'))} / OPS {_format_rate(stat_row.get('ops'))}"),
+            ('누적', f"PA {_format_count(stat_row.get('pa'))} / AB {_format_count(stat_row.get('ab'))} / H {_format_count(stat_row.get('h'))} / HR {_format_count(stat_row.get('hr'))} / RBI {_format_count(stat_row.get('rbi'))}"),
+        ],
+    }
+
+
+def build_team_situational_model(team_name: str, aggregate_row, leader_rows, split_label: str):
+    leader_lines = []
+    for index, row in enumerate(leader_rows[:3], start=1):
+        leader_lines.append(
+            f"{index}. {row['name']} OPS {_format_rate(row.get('ops'))} / PA {_format_count(row.get('pa'))} / HR {_format_count(row.get('hr'))} / RBI {_format_count(row.get('rbi'))}"
+        )
+    return {
+        'title': f'{team_name} {split_label} 팀 상황 성적',
+        'fields': [
+            ('팀 합계', f"AVG {_format_rate(aggregate_row.get('avg'))} / OPS {_format_rate(aggregate_row.get('ops'))} / PA {_format_count(aggregate_row.get('pa'))} / AB {_format_count(aggregate_row.get('ab'))}"),
+            ('상위 3명', '\n'.join(leader_lines) if leader_lines else '데이터 없음'),
+        ],
+    }
+
+
+def build_player_comparison_model(player_one, stat_one, player_two, stat_two, split_label: str):
+    return {
+        'title': f'{split_label} 선수 비교',
+        'fields': [
+            (_player_display_name(player_one), f"AVG {_format_rate(stat_one.get('avg'))} / OPS {_format_rate(stat_one.get('ops'))} / PA {_format_count(stat_one.get('pa'))} / HR {_format_count(stat_one.get('hr'))} / RBI {_format_count(stat_one.get('rbi'))}"),
+            (_player_display_name(player_two), f"AVG {_format_rate(stat_two.get('avg'))} / OPS {_format_rate(stat_two.get('ops'))} / PA {_format_count(stat_two.get('pa'))} / HR {_format_count(stat_two.get('hr'))} / RBI {_format_count(stat_two.get('rbi'))}"),
+        ],
+    }
+
+
+def _model_to_embed(model):
+    embed = discord.Embed(title=model['title'], color=0x00AEEF)
+    for name, value in model['fields']:
+        embed.add_field(name=name, value=value, inline=False)
+    embed.set_footer(text='Created').timestamp = datetime.now()
+    return embed
+
+
+def _describe_player_candidates(players):
+    return ', '.join(f"{_player_team_name(player)} {_player_display_name(player)}" for player in players)
+
+
+def _resolve_single_player(name: str):
+    players = database.search_players_by_name(name)
+    if not players:
+        return None, f'{name} 선수를 찾을 수 없습니다.'
+    if len(players) > 1:
+        return None, f'{name} 선수가 여러 명입니다: {_describe_player_candidates(players)}'
+    return players[0], None
+
+
+async def _send_text(interaction: discord.Interaction, message: str):
+    await interaction.followup.send(message, allowed_mentions=discord.AllowedMentions.none())
+
 @client.event
 async def on_ready():
     print(f'Logged in as {client.user} (ID: {client.user.id})')
@@ -182,6 +350,7 @@ async def as_you_were(interaction: discord.Interaction):
 async def update_tables():
     await asyncio.to_thread(kbo_crawler.update_standings)
     await asyncio.to_thread(kbo_crawler.update_schedule_once, datetime.now(KST).strftime('%m%d'))
+    await asyncio.to_thread(kbo_crawler.refresh_situational_stats_if_stale, datetime.now(KST).year)
 
 @update_tables.before_loop
 async def before_update_tables():
@@ -196,7 +365,7 @@ async def standings(interaction : discord.Interaction):
 
     from_db_result = database.select_standings()
     if from_db_result is None:
-        await interaction.followup.send('순위 데이터를 찾을 수 없습니다.')
+        await _send_text(interaction, '순위 데이터를 찾을 수 없습니다.')
         return
 
     lines = ['순위 | 팀 | 승 | 패 | 무 | 승률']
@@ -223,12 +392,12 @@ async def team_standings(interaction: discord.Interaction, team: str):
 
     from_db_result = database.select_standings()
     if from_db_result is None:
-        await interaction.followup.send('순위 데이터를 찾을 수 없습니다.')
+        await _send_text(interaction, '순위 데이터를 찾을 수 없습니다.')
         return
 
     team_row = _find_standings_team(from_db_result, team)
     if team_row is None:
-        await interaction.followup.send(f'{team} 팀의 성적을 찾을 수 없습니다.')
+        await _send_text(interaction, f'{team} 팀의 성적을 찾을 수 없습니다.')
         return
 
     embed = discord.Embed(
@@ -251,6 +420,87 @@ async def team_standings(interaction: discord.Interaction, team: str):
 
     await interaction.followup.send(embed=embed)
 
+
+@client.tree.command(name='상황성적', description='선택한 선수의 주자 상황별 타격 성적을 보여줍니다.')
+@app_commands.describe(player='상황 성적을 확인할 선수 이름', situation='예: 만루, 득점권, 주자없음')
+async def player_situational_stats(interaction: discord.Interaction, player: str, situation: str):
+    await interaction.response.defer(thinking=True)
+    await ensure_data_ready()
+
+    split_key = resolve_runner_state_input(situation)
+    if split_key is None:
+        await _send_text(interaction, f'{situation} 상황은 지원하지 않습니다.')
+        return
+
+    player_row, error_message = _resolve_single_player(player)
+    if error_message is not None:
+        await _send_text(interaction, error_message)
+        return
+
+    season = datetime.now(KST).year
+    stat_row = database.get_player_situational_stats(_player_id(player_row), season, split_key)
+    if stat_row is None:
+        await _send_text(interaction, f'{player} 선수의 {RUNNER_STATE_SPLIT_LABELS[split_key]} 상황 성적을 찾을 수 없습니다.')
+        return
+
+    model = build_player_situational_model(player_row, stat_row, RUNNER_STATE_SPLIT_LABELS[split_key])
+    await interaction.followup.send(embed=_model_to_embed(model))
+
+
+@client.tree.command(name='팀상황성적', description='선택한 팀의 주자 상황별 타격 성적을 보여줍니다.')
+@app_commands.describe(team='상황 성적을 확인할 팀 이름', situation='예: 만루, 득점권, 주자없음')
+async def team_situational_stats(interaction: discord.Interaction, team: str, situation: str):
+    await interaction.response.defer(thinking=True)
+    await ensure_data_ready()
+
+    split_key = resolve_runner_state_input(situation)
+    if split_key is None:
+        await _send_text(interaction, f'{situation} 상황은 지원하지 않습니다.')
+        return
+
+    season = datetime.now(KST).year
+    team_key = resolve_situational_team_input(team)
+    aggregate_row = database.get_team_situational_aggregate(team_key, season, split_key)
+    if aggregate_row is None:
+        await _send_text(interaction, f'{team} 팀의 {RUNNER_STATE_SPLIT_LABELS[split_key]} 상황 성적을 찾을 수 없습니다.')
+        return
+
+    leader_rows = database.get_team_situational_leaders(team_key, season, split_key)
+    model = build_team_situational_model(team_key, aggregate_row, leader_rows, RUNNER_STATE_SPLIT_LABELS[split_key])
+    await interaction.followup.send(embed=_model_to_embed(model))
+
+
+@client.tree.command(name='선수비교', description='두 선수의 같은 주자 상황별 타격 성적을 비교합니다.')
+@app_commands.describe(player_one='첫 번째 선수 이름', player_two='두 번째 선수 이름', situation='예: 만루, 득점권, 주자없음')
+async def compare_player_situational_stats(interaction: discord.Interaction, player_one: str, player_two: str, situation: str):
+    await interaction.response.defer(thinking=True)
+    await ensure_data_ready()
+
+    split_key = resolve_runner_state_input(situation)
+    if split_key is None:
+        await _send_text(interaction, f'{situation} 상황은 지원하지 않습니다.')
+        return
+
+    first_player, first_error = _resolve_single_player(player_one)
+    if first_error is not None:
+        await _send_text(interaction, f'선수1: {first_error}')
+        return
+
+    second_player, second_error = _resolve_single_player(player_two)
+    if second_error is not None:
+        await _send_text(interaction, f'선수2: {second_error}')
+        return
+
+    season = datetime.now(KST).year
+    first_stat = database.get_player_situational_stats(_player_id(first_player), season, split_key)
+    second_stat = database.get_player_situational_stats(_player_id(second_player), season, split_key)
+    if first_stat is None or second_stat is None:
+        await _send_text(interaction, f'{RUNNER_STATE_SPLIT_LABELS[split_key]} 상황 비교 데이터를 찾을 수 없습니다.')
+        return
+
+    model = build_player_comparison_model(first_player, first_stat, second_player, second_stat, RUNNER_STATE_SPLIT_LABELS[split_key])
+    await interaction.followup.send(embed=_model_to_embed(model))
+
 @client.tree.command(name='일정', description='돌승엽이 KBO 경기 일정을 당신에게 보여줍니다.')
 @app_commands.describe(args_date='[오늘|내일|모레]를 선택해 언제 일정을 확인할지 선택하세요.')
 async def schedule(interaction: discord.Interaction, args_date: Literal['오늘', '내일', '모레']):
@@ -264,10 +514,10 @@ async def schedule(interaction: discord.Interaction, args_date: Literal['오늘'
 
     from_db_result = database.select_game_and_scord(selected_date.strftime('%m%d'))
     if selected_date.weekday() == 0:
-        await interaction.followup.send('경기가 없는 날입니다.')
+        await _send_text(interaction, '경기가 없는 날입니다.')
         return
     if from_db_result is None:
-        await interaction.followup.send('일정을 찾을 수 없습니다.')
+        await _send_text(interaction, '일정을 찾을 수 없습니다.')
         return
 
     embed_title= [ f'{"목차":<5}{"시간"}', f'{"경기"}', f'{"구장":<5}{"비고":<5}']
