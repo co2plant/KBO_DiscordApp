@@ -48,6 +48,49 @@ _SCHEMA_STATEMENTS = (
         CONSTRAINT fk_scores_game FOREIGN KEY (id) REFERENCES Games(id) ON DELETE CASCADE
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS players (
+        player_id VARCHAR(32) PRIMARY KEY,
+        team_name VARCHAR(32) NOT NULL,
+        name VARCHAR(64) NOT NULL,
+        position VARCHAR(32),
+        born VARCHAR(32),
+        height_weight VARCHAR(32),
+        salary VARCHAR(32),
+        debut VARCHAR(32),
+        updated_at DATETIME NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS situational_stats (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        season SMALLINT NOT NULL,
+        entity_type VARCHAR(16) NOT NULL,
+        entity_id VARCHAR(64) NOT NULL,
+        team_name VARCHAR(32) NOT NULL,
+        split_type VARCHAR(32) NOT NULL,
+        split_key VARCHAR(64) NOT NULL,
+        pa INT,
+        ab INT,
+        h INT,
+        double_hits INT,
+        triple_hits INT,
+        hr INT,
+        rbi INT,
+        bb INT,
+        hbp INT,
+        so INT,
+        gidp INT,
+        avg DECIMAL(5,3),
+        obp DECIMAL(5,3),
+        slg DECIMAL(5,3),
+        ops DECIMAL(5,3),
+        source_updated_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_situational_stats (season, entity_type, entity_id, split_type, split_key)
+    )
+    """,
 )
 
 
@@ -82,6 +125,21 @@ def ensure_schema():
     conn.close()
 
 
+def _normalize_name(value):
+    return ''.join(str(value).split()).lower()
+
+
+def _fetchall_as_dicts(cursor, columns):
+    rows = cursor.fetchall()
+    result = []
+    for row in rows:
+        if isinstance(row, dict):
+            result.append(row)
+        else:
+            result.append({column: row[index] for index, column in enumerate(columns)})
+    return result
+
+
 def has_standings_data():
     conn = _connect()
     cursor = conn.cursor()
@@ -103,6 +161,217 @@ def has_schedule_data():
     finally:
         cursor.close()
         conn.close()
+
+
+def upsert_player(player_row):
+    conn = _connect()
+    cursor = conn.cursor()
+    query = """
+    INSERT INTO players (player_id, team_name, name, position, born, height_weight, salary, debut, updated_at)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+    ON DUPLICATE KEY UPDATE
+        team_name = VALUES(team_name),
+        name = VALUES(name),
+        position = VALUES(position),
+        born = VALUES(born),
+        height_weight = VALUES(height_weight),
+        salary = VALUES(salary),
+        debut = VALUES(debut),
+        updated_at = VALUES(updated_at)
+    """
+    values = (
+        player_row['player_id'],
+        player_row['team_name'],
+        player_row['name'],
+        player_row.get('position'),
+        player_row.get('born'),
+        player_row.get('height_weight'),
+        player_row.get('salary'),
+        player_row.get('debut'),
+        player_row['updated_at'],
+    )
+    try:
+        cursor.execute(query, values)
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def upsert_situational_stat(stat_row):
+    conn = _connect()
+    cursor = conn.cursor()
+    query = """
+    INSERT INTO situational_stats (
+        season, entity_type, entity_id, team_name, split_type, split_key,
+        pa, ab, h, double_hits, triple_hits, hr, rbi, bb, hbp, so, gidp,
+        avg, obp, slg, ops, source_updated_at
+    )
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    ON DUPLICATE KEY UPDATE
+        team_name = VALUES(team_name),
+        pa = VALUES(pa),
+        ab = VALUES(ab),
+        h = VALUES(h),
+        double_hits = VALUES(double_hits),
+        triple_hits = VALUES(triple_hits),
+        hr = VALUES(hr),
+        rbi = VALUES(rbi),
+        bb = VALUES(bb),
+        hbp = VALUES(hbp),
+        so = VALUES(so),
+        gidp = VALUES(gidp),
+        avg = VALUES(avg),
+        obp = VALUES(obp),
+        slg = VALUES(slg),
+        ops = VALUES(ops),
+        source_updated_at = VALUES(source_updated_at)
+    """
+    values = (
+        stat_row['season'], stat_row['entity_type'], stat_row['entity_id'], stat_row['team_name'],
+        stat_row['split_type'], stat_row['split_key'], stat_row.get('pa'), stat_row.get('ab'),
+        stat_row.get('h'), stat_row.get('double_hits'), stat_row.get('triple_hits'), stat_row.get('hr'),
+        stat_row.get('rbi'), stat_row.get('bb'), stat_row.get('hbp'), stat_row.get('so'),
+        stat_row.get('gidp'), stat_row.get('avg'), stat_row.get('obp'), stat_row.get('slg'),
+        stat_row.get('ops'), stat_row.get('source_updated_at'),
+    )
+    try:
+        cursor.execute(query, values)
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def search_players_by_name(name_query):
+    conn = _connect()
+    cursor = conn.cursor()
+    columns = ['player_id', 'team_name', 'name', 'position', 'born', 'height_weight', 'salary', 'debut', 'updated_at']
+    try:
+        cursor.execute("""
+        SELECT player_id, team_name, name, position, born, height_weight, salary, debut, updated_at
+        FROM players
+        WHERE name = %s OR REPLACE(LOWER(name), ' ', '') = %s
+        ORDER BY CASE WHEN name = %s THEN 0 ELSE 1 END, team_name, name
+        """, (name_query, _normalize_name(name_query), name_query))
+        return _fetchall_as_dicts(cursor, columns)
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_player_situational_stats(player_id, season, split_key):
+    conn = _connect()
+    cursor = conn.cursor()
+    columns = [
+        'season', 'entity_type', 'entity_id', 'team_name', 'split_type', 'split_key', 'pa', 'ab', 'h',
+        'double_hits', 'triple_hits', 'hr', 'rbi', 'bb', 'hbp', 'so', 'gidp', 'avg', 'obp', 'slg', 'ops',
+        'source_updated_at',
+    ]
+    try:
+        cursor.execute("""
+        SELECT season, entity_type, entity_id, team_name, split_type, split_key, pa, ab, h,
+               double_hits, triple_hits, hr, rbi, bb, hbp, so, gidp, avg, obp, slg, ops, source_updated_at
+        FROM situational_stats
+        WHERE entity_type = 'player' AND entity_id = %s AND season = %s AND split_type = 'runner_state' AND split_key = %s
+        """, (player_id, season, split_key))
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        if isinstance(row, dict):
+            return row
+        return {column: row[index] for index, column in enumerate(columns)}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def _safe_rate(numerator, denominator):
+    if denominator in (None, 0):
+        return None
+    return round(numerator / denominator, 3)
+
+
+def _calculate_slash_line(totals):
+    singles = totals['h'] - totals['double_hits'] - totals['triple_hits'] - totals['hr']
+    total_bases = singles + (2 * totals['double_hits']) + (3 * totals['triple_hits']) + (4 * totals['hr'])
+    avg = _safe_rate(totals['h'], totals['ab'])
+    obp_denominator = totals['ab'] + totals['bb'] + totals['hbp']
+    obp = _safe_rate(totals['h'] + totals['bb'] + totals['hbp'], obp_denominator)
+    slg = _safe_rate(total_bases, totals['ab'])
+    ops = None if obp is None or slg is None else round(obp + slg, 3)
+    return avg, obp, slg, ops
+
+
+def get_team_situational_aggregate(team_name, season, split_key):
+    conn = _connect()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+        SELECT COUNT(*), COALESCE(SUM(pa), 0), COALESCE(SUM(ab), 0), COALESCE(SUM(h), 0),
+               COALESCE(SUM(double_hits), 0), COALESCE(SUM(triple_hits), 0), COALESCE(SUM(hr), 0),
+               COALESCE(SUM(rbi), 0), COALESCE(SUM(bb), 0), COALESCE(SUM(hbp), 0),
+               COALESCE(SUM(so), 0), COALESCE(SUM(gidp), 0)
+        FROM situational_stats
+        WHERE entity_type = 'player' AND team_name = %s AND season = %s AND split_type = 'runner_state' AND split_key = %s
+        """, (team_name, season, split_key))
+        row = cursor.fetchone()
+        if row is None or row[0] == 0:
+            return None
+        totals = {
+            'team_name': team_name,
+            'season': season,
+            'split_key': split_key,
+            'pa': row[1], 'ab': row[2], 'h': row[3], 'double_hits': row[4], 'triple_hits': row[5],
+            'hr': row[6], 'rbi': row[7], 'bb': row[8], 'hbp': row[9], 'so': row[10], 'gidp': row[11],
+        }
+        totals['avg'], totals['obp'], totals['slg'], totals['ops'] = _calculate_slash_line(totals)
+        return totals
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_team_situational_leaders(team_name, season, split_key, limit=3):
+    conn = _connect()
+    cursor = conn.cursor()
+    columns = ['player_id', 'name', 'team_name', 'pa', 'ab', 'h', 'hr', 'rbi', 'avg', 'ops']
+    try:
+        cursor.execute("""
+        SELECT p.player_id, p.name, s.team_name, s.pa, s.ab, s.h, s.hr, s.rbi, s.avg, s.ops
+        FROM situational_stats s
+        JOIN players p ON p.player_id = s.entity_id
+        WHERE s.entity_type = 'player' AND s.team_name = %s AND s.season = %s AND s.split_type = 'runner_state' AND s.split_key = %s
+        ORDER BY s.ops DESC, s.pa DESC, p.name
+        LIMIT %s
+        """, (team_name, season, split_key, limit))
+        return _fetchall_as_dicts(cursor, columns)
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_last_situational_stats_update():
+    conn = _connect()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT MAX(source_updated_at) FROM situational_stats")
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return row[0]
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def should_refresh_situational_stats(now):
+    last_update = get_last_situational_stats_update()
+    if last_update is None:
+        return True
+    if hasattr(last_update, 'date'):
+        return last_update.date() < now.date()
+    return True
 
 
 def insert_standings(game_info):
