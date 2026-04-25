@@ -150,6 +150,8 @@ class TestStandingsRendering(unittest.TestCase):
         self.assertTrue(is_hot_streak('4승'))
         self.assertFalse(is_hot_streak('2승'))
         self.assertFalse(is_hot_streak('1패'))
+        self.assertFalse(is_hot_streak('3패'))
+        self.assertFalse(is_hot_streak('4승0무6패'))
 
     def test_standings_fire_emoji_is_present_in_summary_format(self):
         tree = _read_ast('kbo.py')

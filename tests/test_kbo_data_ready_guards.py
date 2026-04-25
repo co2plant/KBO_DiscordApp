@@ -67,6 +67,39 @@ class TestKboDataReadyGuards(unittest.TestCase):
 
         self.assertTrue(saw_refresh_call, 'startup data readiness must trigger initial situational refresh')
 
+    def test_ensure_data_ready_refreshes_existing_standings(self):
+        tree = _read_ast('kbo.py')
+        ensure_data_ready = _find_function(tree, 'ensure_data_ready')
+
+        saw_update_standings_call = False
+        for node in ast.walk(ensure_data_ready):
+            if not isinstance(node, ast.Attribute):
+                continue
+            if isinstance(node.value, ast.Name) and node.value.id == 'kbo_crawler':
+                if node.attr == 'update_standings':
+                    saw_update_standings_call = True
+
+        self.assertTrue(saw_update_standings_call, 'startup must refresh existing standings instead of serving stale rows')
+
+    def test_update_tables_runs_frequent_standings_refresh(self):
+        tree = _read_ast('kbo.py')
+        for node in tree.body:
+            if not isinstance(node, ast.AsyncFunctionDef) or node.name != 'update_tables':
+                continue
+            for decorator in node.decorator_list:
+                if not isinstance(decorator, ast.Call):
+                    continue
+                if not isinstance(decorator.func, ast.Attribute) or decorator.func.attr != 'loop':
+                    continue
+                minutes = None
+                for keyword in decorator.keywords:
+                    if keyword.arg == 'minutes' and isinstance(keyword.value, ast.Constant):
+                        minutes = keyword.value.value
+                self.assertEqual(minutes, 30)
+                return
+
+        raise AssertionError('update_tables loop decorator not found')
+
     def test_update_tables_uses_kst_date_for_schedule_refresh(self):
         tree = _read_ast('kbo.py')
         update_tables = _find_function(tree, 'update_tables')

@@ -57,6 +57,25 @@ def _find_database_update_standings_call(function_node: ast.FunctionDef) -> ast.
     raise AssertionError('database.update_standings(...) call not found')
 
 
+def _assigned_tds_index(function_node: ast.FunctionDef, target_name: str) -> int:
+    for node in ast.walk(function_node):
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(target, ast.Name) and target.id == target_name for target in node.targets):
+            continue
+        value = node.value
+        if not isinstance(value, ast.Attribute) or value.attr != 'text':
+            continue
+        if not isinstance(value.value, ast.Subscript):
+            continue
+        subscript = value.value
+        if not isinstance(subscript.value, ast.Name) or subscript.value.id != 'tds':
+            continue
+        if isinstance(subscript.slice, ast.Constant) and isinstance(subscript.slice.value, int):
+            return subscript.slice.value
+    raise AssertionError(f'{target_name} assignment from tds[...] not found in {function_node.name}')
+
+
 class TestPhase1Guards(unittest.TestCase):
     def test_insert_standings_tuple_shape_and_order(self):
         tree = _read_ast('database.py')
@@ -95,6 +114,18 @@ class TestPhase1Guards(unittest.TestCase):
             ['id', 'team', 'win', 'lose', 'draw', 'rate', 'last_10', 'streak', 'home', 'away'],
             'crawler must pass update_standings values with id first',
         )
+
+    def test_crawler_reads_standings_record_columns_after_game_count(self):
+        tree = _read_ast('kbo_crawler.py')
+        for function_name in ('insert_standings', 'update_standings'):
+            with self.subTest(function_name=function_name):
+                function_node = _find_function(tree, function_name)
+                self.assertEqual(_assigned_tds_index(function_node, 'win'), 3)
+                self.assertEqual(_assigned_tds_index(function_node, 'lose'), 4)
+                self.assertEqual(_assigned_tds_index(function_node, 'draw'), 5)
+                self.assertEqual(_assigned_tds_index(function_node, 'rate'), 6)
+                self.assertEqual(_assigned_tds_index(function_node, 'last_10'), 8)
+                self.assertEqual(_assigned_tds_index(function_node, 'streak'), 9)
 
     def test_crawler_import_guard_exists(self):
         tree = _read_ast('kbo_crawler.py')
