@@ -31,6 +31,8 @@ services:
       DB_USER: ${DB_USER:-app_user}
       DB_PASSWORD: ${DB_PASSWORD:-app_password}
       DB_NAME: ${DB_NAME:-kbo}
+    volumes:
+      - ./data/sql_dumps:/app/data/sql_dumps
     depends_on:
       mariadb:
         condition: service_healthy

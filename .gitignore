@@ -307,4 +307,8 @@ pyrightconfig.json
 
 .sisyphus/
 
+# Generated database snapshots
+data/sql_dumps/*.sql
+!data/sql_dumps/.gitkeep
+
 # End of https://www.toptal.com/developers/gitignore/api/visualstudiocode,pycharm,python
