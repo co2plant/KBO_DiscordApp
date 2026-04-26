@@ -1,7 +1,6 @@
-FROM python:3.11-slim
+FROM node:20-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+ENV NODE_ENV=production
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -13,14 +12,9 @@ RUN apt-get update \
 
 WORKDIR /app
 
+COPY package*.json /app/
+RUN npm ci --omit=dev
+
 COPY . /app
 
-RUN python -m pip install --upgrade pip \
-    && pip install --no-cache-dir \
-        discord.py==2.7.1 \
-        pymysql \
-        selenium \
-        pillow \
-        requests
-
-CMD ["python", "kbo.py"]
+CMD ["node", "index.js"]
