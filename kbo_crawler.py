@@ -4,6 +4,12 @@ from selenium.webdriver.common.by import By
 import re
 
 
+STANDINGS_URL = 'https://www.koreabaseball.com/Record/TeamRank/TeamRankDaily.aspx'
+STANDINGS_ROWS_XPATH = '//*[@id="cphContents_cphContents_cphContents_udpRecord"]/table/tbody/tr'
+SCHEDULE_URL = 'https://www.koreabaseball.com/Schedule/Schedule.aspx'
+SCHEDULE_ROWS_XPATH = '//*[@id="tblScheduleList"]/tbody/tr'
+
+
 def _create_driver():
     options = webdriver.ChromeOptions()
     options.add_argument('headless')
@@ -14,13 +20,37 @@ def _create_driver():
 def _build_game_id(selected_date, game_index):
     return f'{selected_date}{game_index:02d}'
 
+
+def _fetch_standings_rows(driver):
+    driver.get(STANDINGS_URL)
+    return driver.find_elements(By.XPATH, STANDINGS_ROWS_XPATH)
+
+
+def _fetch_schedule_rows(driver):
+    driver.get(SCHEDULE_URL)
+    return driver.find_elements(By.XPATH, SCHEDULE_ROWS_XPATH)
+
+
+def _split_matchup_text(matchup_text):
+    separated_matchup = matchup_text.split('vs')
+    team = ['', '']
+    score = ['', '']
+
+    for index in range(2):
+        for word in list(separated_matchup[index]):
+            if word.isdigit():
+                score[index] += word
+            else:
+                team[index] += word
+
+    return team, score
+
+
 def insert_standings():
     driver = None
     try:
         driver = _create_driver()
-        driver.get('https://www.koreabaseball.com/Record/TeamRank/TeamRankDaily.aspx')
-
-        standingsArea = driver.find_elements(By.XPATH, '//*[@id="cphContents_cphContents_cphContents_udpRecord"]/table/tbody/tr')
+        standingsArea = _fetch_standings_rows(driver)
 
         for row in standingsArea:
             tds = row.find_elements(By.TAG_NAME, 'td')
@@ -43,9 +73,7 @@ def update_standings():
     driver = None
     try:
         driver = _create_driver()
-        driver.get('https://www.koreabaseball.com/Record/TeamRank/TeamRankDaily.aspx')
-
-        standingsArea = driver.find_elements(By.XPATH, '//*[@id="cphContents_cphContents_cphContents_udpRecord"]/table/tbody/tr')
+        standingsArea = _fetch_standings_rows(driver)
 
         for row in standingsArea:
             tds = row.find_elements(By.TAG_NAME, 'td')
@@ -68,9 +96,7 @@ def update_schedule_once(selected_date):
     driver = None
     try:
         driver = _create_driver()
-        driver.get('https://www.koreabaseball.com/Schedule/Schedule.aspx')
-
-        scheduleArea = driver.find_elements(By.XPATH, '//*[@id="tblScheduleList"]/tbody/tr')
+        scheduleArea = _fetch_schedule_rows(driver)
 
         count = 0
         rowspan_value = 0
@@ -92,26 +118,11 @@ def update_schedule_once(selected_date):
             tds = scheduleArea[i].find_elements(By.TAG_NAME, 'td')
             game_id = _build_game_id(selected_date, i - (count - rowspan_value))
 
-            team = ['', '']
-            score = ['', '']
-
             if(i==count-rowspan_value):
-                temp = tds[2].text.split('vs')
-                for j in range(2):
-                    for word in list(temp[j]):
-                        if word.isdigit():
-                            score[j]+=word
-                        else:
-                            team[j]+=word
+                team, score = _split_matchup_text(tds[2].text)
                 database.update_game_and_score([game_id, tds[1].text, team[0], score[0], score[1], team[1], tds[7].text, tds[8].text])
             else:
-                temp = tds[1].text.split('vs')
-                for j in range(2):
-                    for word in list(temp[j]):
-                        if word.isdigit():
-                            score[j]+=word
-                        else:
-                            team[j]+=word
+                team, score = _split_matchup_text(tds[1].text)
                 database.update_game_and_score([game_id, tds[0].text, team[0], score[0], score[1], team[1], tds[6].text, tds[7].text])
     finally:
         if driver is not None:
@@ -121,9 +132,7 @@ def update_score(selected_date):
     driver = None
     try:
         driver = _create_driver()
-        driver.get('https://www.koreabaseball.com/Schedule/Schedule.aspx')
-
-        scheduleArea = driver.find_elements(By.XPATH, '//*[@id="tblScheduleList"]/tbody/tr')
+        scheduleArea = _fetch_schedule_rows(driver)
 
         id_format = None
         incount = 0
@@ -141,16 +150,7 @@ def update_score(selected_date):
 
             separated_row = row.text.split(' ')
 
-            st = separated_row[i+1].split('vs')
-            team = ['', '']
-            score = ['', '']
-
-            for j in range(2):
-                for word in list(st[j]):
-                    if word.isdigit():
-                        score[j]+=word
-                    else:
-                        team[j]+=word
+            team, score = _split_matchup_text(separated_row[i+1])
 
             if score[0] == '':
                 score[0] = '-1'
@@ -165,9 +165,7 @@ def insert_schedule_month():
     driver = None
     try:
         driver = _create_driver()
-        driver.get('https://www.koreabaseball.com/Schedule/Schedule.aspx')
-
-        scheduleArea = driver.find_elements(By.XPATH, '//*[@id="tblScheduleList"]/tbody/tr')
+        scheduleArea = _fetch_schedule_rows(driver)
 
         id_format = None
         incount = 0
@@ -185,16 +183,7 @@ def insert_schedule_month():
 
             separated_row = row.text.split(' ')
 
-            st = separated_row[i+1].split('vs')
-            team = ['', '']
-            score = ['', '']
-
-            for j in range(2):
-                for word in list(st[j]):
-                    if word.isdigit():
-                        score[j]+=word
-                    else:
-                        team[j]+=word
+            team, score = _split_matchup_text(separated_row[i+1])
 
             if score[0] == '':
                 score[0] = '-1'
