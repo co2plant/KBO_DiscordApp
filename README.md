@@ -1,10 +1,9 @@
 # KBO_DiscordApp
 
-KBO 경기 정보 Discord 봇입니다. 현재 런타임은 `discord.js` 기반 JavaScript이며, 기존 Python 파일은 전환 참고/가드 테스트용으로 남아 있습니다.
+KBO 경기 정보 Discord 봇입니다. 현재 런타임은 `discord.js` 기반 JavaScript입니다.
 
 ## 문서
 - [플랜 우선 작업 흐름](PLAN_FIRST_WORKFLOW.md)
-- [테스트 실행 안내](tests/README.md)
 
 ## JavaScript 개발 명령
 
@@ -58,6 +57,6 @@ docker compose ps
 docker compose logs -f bot
 ```
 
-## Python 전환 참고
+## 테스트
 
-기존 `kbo.py`, `database.py`, `settings.py`, `kbo_crawler.py`와 `tests/*.py`는 JavaScript 전환 중 동작 계약을 비교하기 위한 참고 자료입니다. 새 런타임 수정은 `index.js`, `commands/`, `src/`, `test/`를 기준으로 진행합니다.
+JavaScript 테스트는 `test/*.js`에 있으며 `npm run check`로 문법 검사와 함께 실행합니다.
