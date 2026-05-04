@@ -76,6 +76,41 @@ class _FakeDriver:
         self.quit_calls += 1
 
 
+class _FakeCell:
+    def __init__(self, text: str, attributes=None):
+        self.text = text
+        self.attributes = {} if attributes is None else dict(attributes)
+
+    def get_attribute(self, name):
+        return self.attributes.get(name)
+
+
+class _FakeScheduleRow:
+    def __init__(self, cells, day_cell=None):
+        self.cells = cells
+        self.day_cell = day_cell
+
+    def find_elements(self, by, value):
+        if value == 'day':
+            return [] if self.day_cell is None else [self.day_cell]
+        return self.cells
+
+
+class _FakeScheduleDriver:
+    def __init__(self, rows):
+        self.rows = rows
+        self.quit_calls = 0
+
+    def get(self, url):
+        self.url = url
+
+    def find_elements(self, by, value):
+        return self.rows
+
+    def quit(self):
+        self.quit_calls += 1
+
+
 class _FakeChromeOptions:
     def __init__(self):
         self.arguments = []
@@ -150,6 +185,48 @@ def _load_kbo_crawler_with_stubs(driver_holder: dict):
         return module
 
 
+def _load_kbo_crawler_with_schedule_stubs(rows, updates, driver_holder: dict):
+    fake_database = _DatabaseModule('database')
+    fake_database.insert_standings = lambda _game_info: None
+    fake_database.update_standings = lambda _game_info: None
+    fake_database.update_game_and_score = lambda game_info: updates.append(game_info)
+    fake_database.insert_game_and_score = lambda _game_info: None
+
+    webdriver_module = _WebDriverModule('selenium.webdriver')
+    webdriver_module.ChromeOptions = _FakeChromeOptions
+
+    def create_driver(_options):
+        driver = _FakeScheduleDriver(rows)
+        driver_holder['driver'] = driver
+        return driver
+
+    webdriver_module.Chrome = create_driver
+
+    selenium_module = _SeleniumModule('selenium')
+    selenium_module.webdriver = webdriver_module
+
+    by_module = _ByModule('selenium.webdriver.common.by')
+    by_module.By = types.SimpleNamespace(XPATH='xpath', TAG_NAME='tag_name', CLASS_NAME='class_name')
+
+    with patch.dict(
+        sys.modules,
+        {
+            'database': fake_database,
+            'selenium': selenium_module,
+            'selenium.webdriver': webdriver_module,
+            'selenium.webdriver.common': types.ModuleType('selenium.webdriver.common'),
+            'selenium.webdriver.common.by': by_module,
+        },
+    ):
+        spec = importlib.util.spec_from_file_location('kbo_crawler_schedule_under_test', Path('kbo_crawler.py'))
+        if spec is None or spec.loader is None:
+            raise AssertionError('failed to load kbo_crawler.py')
+
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+
 class TestCrawlerCleanup(unittest.TestCase):
     def test_driver_quit_is_guaranteed_in_all_driver_functions(self):
         tree = _read_ast('kbo_crawler.py')
@@ -176,6 +253,35 @@ class TestCrawlerCleanup(unittest.TestCase):
 
         self.assertIn('driver', driver_holder, 'test should create a webdriver instance')
         self.assertEqual(driver_holder['driver'].quit_calls, 1, 'driver.quit() must run on failure')
+
+    def test_update_schedule_once_matches_undotted_mmdd_argument(self):
+        rows = [
+            _FakeScheduleRow(
+                [
+                    _FakeCell('05.04(월)'),
+                    _FakeCell('18:30'),
+                    _FakeCell('LG3vs2한화'),
+                    _FakeCell('게임센터'),
+                    _FakeCell('하이라이트'),
+                    _FakeCell('TV'),
+                    _FakeCell('라디오'),
+                    _FakeCell('잠실'),
+                    _FakeCell('종료'),
+                ],
+                day_cell=_FakeCell('05.04(월)', {'rowspan': '1'}),
+            )
+        ]
+        updates = []
+        driver_holder = {}
+        module = _load_kbo_crawler_with_schedule_stubs(rows, updates, driver_holder)
+
+        module.update_schedule_once('0504')
+
+        self.assertEqual(
+            updates,
+            [['050400', '18:30', 'LG', '3', '2', '한화', '잠실', '종료']],
+        )
+        self.assertEqual(driver_holder['driver'].quit_calls, 1)
 
 
 if __name__ == '__main__':

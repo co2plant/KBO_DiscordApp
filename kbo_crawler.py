@@ -14,6 +14,16 @@ def _create_driver():
 def _build_game_id(selected_date, game_index):
     return f'{selected_date}{game_index:02d}'
 
+
+def _normalize_schedule_date(value):
+    value = str(value).strip()
+    match = re.search(r'(\d{1,2})\D+(\d{1,2})', value)
+    if match:
+        return f'{int(match.group(1)):02d}{int(match.group(2)):02d}'
+
+    digits = ''.join(char for char in value if char.isdigit())
+    return digits
+
 def insert_standings():
     driver = None
     try:
@@ -65,6 +75,7 @@ def update_standings():
             driver.quit()
 
 def update_schedule_once(selected_date):
+    selected_date = _normalize_schedule_date(selected_date)
     driver = None
     try:
         driver = _create_driver()
@@ -83,7 +94,7 @@ def update_schedule_once(selected_date):
             for td in tds:
                 dates = td.text.split('(')
                 count+=int(td.get_attribute('rowspan'))
-                if dates[0] == selected_date:
+                if _normalize_schedule_date(dates[0]) == selected_date:
                     rowspan_value = int(td.get_attribute('rowspan'))
                     isloop = True
                     break
