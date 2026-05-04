@@ -111,6 +111,44 @@ def _format_schedule_matchup(selected_date: datetime, row) -> str:
     return f'{away_team:<10} {logo_emoji[away_team]} {score_text} {logo_emoji[home_team]} {home_team:<10}'
 
 
+def _format_score_line(selected_date: datetime, row) -> str:
+    away_team = row[2]
+    home_team = row[3]
+    game_time = row[1]
+    stadium = row[4]
+    remarks = row[5]
+    away_score = row[7]
+    home_score = row[8]
+
+    if away_score in (None, -1, '-1', ''):
+        away_score = 0
+    if home_score in (None, -1, '-1', ''):
+        home_score = 0
+
+    if _should_hide_schedule_score(selected_date, game_time, remarks, away_score, home_score):
+        score_text = 'vs'
+        status_text = '경기 전'
+    else:
+        score_text = f'{away_score} vs {home_score}'
+        status_text = remarks if remarks not in ('', '-') else '진행/종료'
+
+    away_logo = logo_emoji.get(away_team, '')
+    home_logo = logo_emoji.get(home_team, '')
+
+    return f'{game_time} | {away_logo} {away_team} {score_text} {home_logo} {home_team} | {stadium} | {status_text}'
+
+
+def _find_team_games(games, team_name: str):
+    normalized_team_name = _normalize_team_name(team_name)
+
+    return [
+        game_row
+        for game_row in games
+        if _normalize_team_name(game_row[2]) == normalized_team_name
+        or _normalize_team_name(game_row[3]) == normalized_team_name
+    ]
+
+
 async def ensure_data_ready():
     global _data_ready
 
@@ -281,6 +319,105 @@ async def schedule(interaction: discord.Interaction, args_date: Literal['오늘'
     embed.add_field(name=embed_title[0], value=str[0], inline=True)
     embed.add_field(name=embed_title[1], value=str[1], inline=True)
     embed.add_field(name=embed_title[2], value=str[2], inline=True)
+
+    await interaction.followup.send(embed=embed)
+
+
+@client.tree.command(name='스코어', description='오늘 KBO 경기 스코어를 보여줍니다.')
+async def scores(interaction: discord.Interaction):
+    await interaction.response.defer(thinking=True)
+    await ensure_data_ready()
+
+    selected_date = datetime.now(KST)
+    selected_date_key = selected_date.strftime('%m%d')
+
+    try:
+        await asyncio.to_thread(kbo_crawler.update_schedule_once, selected_date_key)
+    except Exception as exc:
+        print(f'Failed to refresh today score: {exc}')
+
+    from_db_result = database.select_game_and_scord(selected_date_key)
+    if from_db_result is None or len(from_db_result) == 0:
+        await interaction.followup.send('오늘 경기 스코어를 찾을 수 없습니다.')
+        return
+
+    embed = discord.Embed(
+        title=f'{selected_date.strftime("%m월 %d일")} KBO 스코어',
+        url=f'https://m.sports.naver.com/kbaseball/schedule/index?date={selected_date.strftime("%Y-%m-%d")}',
+        color=0x00AEEF,
+    )
+    embed.add_field(
+        name='오늘 스코어',
+        value='\n'.join(_format_score_line(selected_date, row) for row in from_db_result),
+        inline=False,
+    )
+    embed.set_footer(text='Created').timestamp = datetime.now()
+
+    await interaction.followup.send(embed=embed)
+
+
+@client.tree.command(name='팀', description='선택한 팀의 오늘 경기와 성적 요약을 보여줍니다.')
+@app_commands.describe(team='요약을 확인할 팀 이름을 입력하세요.')
+async def team_summary(interaction: discord.Interaction, team: str):
+    await interaction.response.defer(thinking=True)
+    await ensure_data_ready()
+
+    selected_date = datetime.now(KST)
+    selected_date_key = selected_date.strftime('%m%d')
+
+    try:
+        await asyncio.to_thread(kbo_crawler.update_schedule_once, selected_date_key)
+    except Exception as exc:
+        print(f'Failed to refresh today score: {exc}')
+
+    standings_rows = database.select_standings()
+    team_row = _find_standings_team(standings_rows, team) if standings_rows is not None else None
+
+    game_rows = database.select_game_and_scord(selected_date_key)
+    team_games = _find_team_games(game_rows or [], team)
+
+    if team_row is None and not team_games:
+        await interaction.followup.send(f'{team} 팀 정보를 찾을 수 없습니다.')
+        return
+
+    team_name = team_row[1] if team_row is not None else team
+    if team_row is None:
+        first_game = team_games[0]
+        if _normalize_team_name(first_game[2]) == _normalize_team_name(team):
+            team_name = first_game[2]
+        else:
+            team_name = first_game[3]
+
+    team_logo = logo_emoji.get(team_name, '')
+    embed = discord.Embed(
+        title=f'{team_logo} {team_name} 팀 요약',
+        url='https://sports.news.naver.com/kbaseball/record/index?category=kbo',
+        color=0x00AEEF,
+    )
+
+    if team_row is not None:
+        embed.add_field(
+            name='성적',
+            value=(
+                f'{team_row[0]}위 · {team_row[2]}승 {team_row[3]}패 {team_row[4]}무 ({team_row[5]})\n'
+                f'최근 10경기 {team_row[6]} · 연속 {team_row[7]}\n'
+                f'홈 {team_row[8]} · 원정 {team_row[9]}'
+            ),
+            inline=False,
+        )
+    else:
+        embed.add_field(name='성적', value='순위 데이터를 찾을 수 없습니다.', inline=False)
+
+    if team_games:
+        embed.add_field(
+            name='오늘 경기',
+            value='\n'.join(_format_score_line(selected_date, row) for row in team_games),
+            inline=False,
+        )
+    else:
+        embed.add_field(name='오늘 경기', value='오늘 예정된 경기가 없습니다.', inline=False)
+
+    embed.set_footer(text='Created').timestamp = datetime.now()
 
     await interaction.followup.send(embed=embed)
 
