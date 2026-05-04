@@ -105,6 +105,20 @@ def has_schedule_data():
         conn.close()
 
 
+def has_schedule_data_for_date(selected_date):
+    conn = _connect()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT 1 FROM Games WHERE id LIKE CONCAT(%s, '%%') LIMIT 1",
+            str(selected_date),
+        )
+        return cursor.fetchone() is not None
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def insert_standings(game_info):
     # Connect to the database
     conn = _connect()

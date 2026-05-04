@@ -130,6 +130,21 @@ class TestDatabaseReadiness(unittest.TestCase):
         database.ensure_schema()
         self.assertTrue(database.has_standings_data())
 
+    def test_has_schedule_data_for_date_checks_selected_mmdd(self):
+        schema_conn = _FakeConnection()
+        date_conn = _FakeConnection()
+        date_conn.cursor_instance.fetchone_result = (1,)
+        database = _load_database_module([schema_conn, date_conn])
+
+        database.ensure_schema()
+        self.assertTrue(database.has_schedule_data_for_date('0505'))
+
+        executed = date_conn.cursor_instance.executed
+        self.assertEqual(len(executed), 1)
+        self.assertIn('FROM Games', executed[0][0])
+        self.assertIn('LIKE CONCAT', executed[0][0])
+        self.assertEqual(executed[0][1], '0505')
+
 
 if __name__ == '__main__':
     unittest.main()

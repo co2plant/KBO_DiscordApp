@@ -141,6 +141,8 @@ class _FakeDatabase(types.ModuleType):
         self.game_rows = []
         self.standings_rows = []
         self.selected_game_keys = []
+        self.schedule_checks = []
+        self.schedule_exists_by_date = {}
 
     def ensure_schema(self):
         return None
@@ -150,6 +152,10 @@ class _FakeDatabase(types.ModuleType):
 
     def has_schedule_data(self):
         return True
+
+    def has_schedule_data_for_date(self, selected_date):
+        self.schedule_checks.append(selected_date)
+        return self.schedule_exists_by_date.get(selected_date, bool(self.game_rows))
 
     def select_game_and_scord(self, selected_date):
         self.selected_game_keys.append(selected_date)
@@ -163,6 +169,7 @@ class _FakeCrawler(types.ModuleType):
     def __init__(self):
         super().__init__('kbo_crawler')
         self.schedule_refreshes = []
+        self.standings_refreshes = 0
 
     def insert_standings(self):
         return None
@@ -171,6 +178,7 @@ class _FakeCrawler(types.ModuleType):
         return None
 
     def update_standings(self):
+        self.standings_refreshes += 1
         return None
 
     def update_schedule_once(self, selected_date):
@@ -253,7 +261,7 @@ def _load_kbo_module(database, crawler):
 
 
 class TestScoreTeamCommandFlow(unittest.TestCase):
-    def test_scores_refreshes_today_and_sends_score_embed(self):
+    def test_scores_uses_cached_today_game_without_schedule_recrawl(self):
         database = _FakeDatabase()
         database.game_rows = [
             ('050400', '18:30', 'LG', '한화', '잠실', '종료', '050400', 3, 2),
@@ -265,8 +273,8 @@ class TestScoreTeamCommandFlow(unittest.TestCase):
         asyncio.run(module.scores(interaction))
 
         self.assertEqual(interaction.response.defer_calls, [{'thinking': True}])
-        self.assertEqual(len(crawler.schedule_refreshes), 1)
-        self.assertEqual(database.selected_game_keys, crawler.schedule_refreshes)
+        self.assertEqual(crawler.schedule_refreshes, [])
+        self.assertEqual(database.schedule_checks, database.selected_game_keys)
         self.assertEqual(len(interaction.followup.sent), 1)
 
         sent_embed = interaction.followup.sent[0]['embed']
@@ -275,7 +283,20 @@ class TestScoreTeamCommandFlow(unittest.TestCase):
         self.assertIn('LG 3 vs 2', sent_embed.fields[0]['value'])
         self.assertIn('한화', sent_embed.fields[0]['value'])
 
-    def test_team_summary_sends_standings_and_matching_today_game(self):
+    def test_scores_refreshes_today_game_when_cache_is_missing(self):
+        database = _FakeDatabase()
+        database.schedule_exists_by_date = {'0505': False}
+        crawler = _FakeCrawler()
+        module = _load_kbo_module(database, crawler)
+        interaction = _FakeInteraction()
+
+        asyncio.run(module.scores(interaction))
+
+        self.assertEqual(crawler.schedule_refreshes, ['0505'])
+        self.assertEqual(len(interaction.followup.sent), 1)
+        self.assertEqual(interaction.followup.sent[0]['content'], '오늘 경기 스코어를 찾을 수 없습니다.')
+
+    def test_team_summary_uses_cached_today_game_and_refreshes_standings(self):
         database = _FakeDatabase()
         database.standings_rows = [
             ('1', 'LG', 10, 5, 0, '0.667', '7-3', '3승', '5-2', '5-3'),
@@ -292,7 +313,8 @@ class TestScoreTeamCommandFlow(unittest.TestCase):
         asyncio.run(module.team_summary(interaction, 'lg'))
 
         self.assertEqual(interaction.response.defer_calls, [{'thinking': True}])
-        self.assertEqual(len(crawler.schedule_refreshes), 1)
+        self.assertEqual(crawler.schedule_refreshes, [])
+        self.assertEqual(crawler.standings_refreshes, 1)
         self.assertEqual(len(interaction.followup.sent), 1)
 
         sent_embed = interaction.followup.sent[0]['embed']
@@ -303,7 +325,34 @@ class TestScoreTeamCommandFlow(unittest.TestCase):
         self.assertIn('LG 3 vs 2', field_values['오늘 경기'])
         self.assertNotIn('KIA', field_values['오늘 경기'])
 
+    def test_standings_refreshes_standings_on_command(self):
+        database = _FakeDatabase()
+        database.standings_rows = [
+            ('1', 'LG', 10, 5, 0, '0.667', '7-3', '3승', '5-2', '5-3'),
+        ]
+        crawler = _FakeCrawler()
+        module = _load_kbo_module(database, crawler)
+        interaction = _FakeInteraction()
+
+        asyncio.run(module.standings(interaction))
+
+        self.assertEqual(crawler.standings_refreshes, 1)
+        self.assertEqual(len(interaction.followup.sent), 1)
+
+    def test_team_standings_refreshes_standings_on_command(self):
+        database = _FakeDatabase()
+        database.standings_rows = [
+            ('1', 'LG', 10, 5, 0, '0.667', '7-3', '3승', '5-2', '5-3'),
+        ]
+        crawler = _FakeCrawler()
+        module = _load_kbo_module(database, crawler)
+        interaction = _FakeInteraction()
+
+        asyncio.run(module.team_standings(interaction, 'LG'))
+
+        self.assertEqual(crawler.standings_refreshes, 1)
+        self.assertEqual(len(interaction.followup.sent), 1)
+
 
 if __name__ == '__main__':
     unittest.main()
-

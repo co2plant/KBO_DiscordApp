@@ -165,11 +165,29 @@ async def ensure_data_ready():
             print('Bootstrapping standings data...')
             await asyncio.to_thread(kbo_crawler.insert_standings)
 
-        if not await asyncio.to_thread(database.has_schedule_data):
-            print('Bootstrapping schedule data...')
-            await asyncio.to_thread(kbo_crawler.insert_schedule_month)
+        today_key = datetime.now(KST).strftime('%m%d')
+        if not await asyncio.to_thread(database.has_schedule_data_for_date, today_key):
+            print(f'Bootstrapping schedule data for {today_key}...')
+            await asyncio.to_thread(kbo_crawler.update_schedule_once, today_key)
 
         _data_ready = True
+
+
+async def _refresh_standings_for_command():
+    try:
+        await asyncio.to_thread(kbo_crawler.update_standings)
+    except Exception as exc:
+        print(f'Failed to refresh standings: {exc}')
+
+
+async def _ensure_schedule_data_for_date(selected_date_key: str):
+    if await asyncio.to_thread(database.has_schedule_data_for_date, selected_date_key):
+        return
+
+    try:
+        await asyncio.to_thread(kbo_crawler.update_schedule_once, selected_date_key)
+    except Exception as exc:
+        print(f'Failed to refresh schedule for {selected_date_key}: {exc}')
 
 
 def _normalize_team_name(team_name: str) -> str:
@@ -229,6 +247,7 @@ async def before_update_tables():
 async def standings(interaction : discord.Interaction):
     await interaction.response.defer(thinking=True)
     await ensure_data_ready()
+    await _refresh_standings_for_command()
 
     embed = discord.Embed(title='KBO 순위', url='https://sports.news.naver.com/kbaseball/record/index?category=kbo', color=0x00AEEF)
 
@@ -258,6 +277,7 @@ async def standings(interaction : discord.Interaction):
 async def team_standings(interaction: discord.Interaction, team: str):
     await interaction.response.defer(thinking=True)
     await ensure_data_ready()
+    await _refresh_standings_for_command()
 
     from_db_result = database.select_standings()
     if from_db_result is None:
@@ -297,10 +317,12 @@ async def schedule(interaction: discord.Interaction, args_date: Literal['오늘'
 
     selected_day = {'오늘':0,'내일':1,'모레':2}
     selected_date = (datetime.today()+timedelta(days=selected_day[args_date]))
+    selected_date_key = selected_date.strftime('%m%d')
+    await _ensure_schedule_data_for_date(selected_date_key)
 
     embed = discord.Embed(title=f'{selected_date.strftime("%m월 %d일")} {days[selected_date.weekday()]}요일 KBO 경기 일정',url=f'https://m.sports.naver.com/kbaseball/schedule/index?date={selected_date.strftime("%Y-%m-%d")}', color=0x00AEEF)
 
-    from_db_result = database.select_game_and_scord(selected_date.strftime('%m%d'))
+    from_db_result = database.select_game_and_scord(selected_date_key)
     if selected_date.weekday() == 0:
         await interaction.followup.send('경기가 없는 날입니다.')
         return
@@ -331,10 +353,7 @@ async def scores(interaction: discord.Interaction):
     selected_date = datetime.now(KST)
     selected_date_key = selected_date.strftime('%m%d')
 
-    try:
-        await asyncio.to_thread(kbo_crawler.update_schedule_once, selected_date_key)
-    except Exception as exc:
-        print(f'Failed to refresh today score: {exc}')
+    await _ensure_schedule_data_for_date(selected_date_key)
 
     from_db_result = database.select_game_and_scord(selected_date_key)
     if from_db_result is None or len(from_db_result) == 0:
@@ -365,10 +384,8 @@ async def team_summary(interaction: discord.Interaction, team: str):
     selected_date = datetime.now(KST)
     selected_date_key = selected_date.strftime('%m%d')
 
-    try:
-        await asyncio.to_thread(kbo_crawler.update_schedule_once, selected_date_key)
-    except Exception as exc:
-        print(f'Failed to refresh today score: {exc}')
+    await _ensure_schedule_data_for_date(selected_date_key)
+    await _refresh_standings_for_command()
 
     standings_rows = database.select_standings()
     team_row = _find_standings_team(standings_rows, team) if standings_rows is not None else None

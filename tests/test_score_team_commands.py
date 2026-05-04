@@ -39,27 +39,14 @@ def _command_name(function_node: ast.FunctionDef | ast.AsyncFunctionDef) -> str 
     return None
 
 
-def _awaits_schedule_refresh(function_node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+def _awaits_helper(function_node: ast.FunctionDef | ast.AsyncFunctionDef, helper_name: str) -> bool:
     for node in ast.walk(function_node):
         if not isinstance(node, ast.Await):
             continue
         if not isinstance(node.value, ast.Call):
             continue
         call = node.value
-        if not isinstance(call.func, ast.Attribute) or call.func.attr != 'to_thread':
-            continue
-        if not isinstance(call.func.value, ast.Name) or call.func.value.id != 'asyncio':
-            continue
-        if not call.args:
-            continue
-        refresh_target = call.args[0]
-        if not isinstance(refresh_target, ast.Attribute):
-            continue
-        if refresh_target.attr != 'update_schedule_once':
-            continue
-        if not isinstance(refresh_target.value, ast.Name):
-            continue
-        if refresh_target.value.id == 'kbo_crawler':
+        if isinstance(call.func, ast.Name) and call.func.id == helper_name:
             return True
     return False
 
@@ -70,14 +57,15 @@ class TestScoreTeamCommands(unittest.TestCase):
         scores = _find_function(tree, 'scores')
 
         self.assertEqual(_command_name(scores), '스코어')
-        self.assertTrue(_awaits_schedule_refresh(scores))
+        self.assertTrue(_awaits_helper(scores, '_ensure_schedule_data_for_date'))
 
     def test_team_summary_command_exists(self):
         tree = _read_ast('kbo.py')
         team_summary = _find_function(tree, 'team_summary')
 
         self.assertEqual(_command_name(team_summary), '팀')
-        self.assertTrue(_awaits_schedule_refresh(team_summary))
+        self.assertTrue(_awaits_helper(team_summary, '_ensure_schedule_data_for_date'))
+        self.assertTrue(_awaits_helper(team_summary, '_refresh_standings_for_command'))
 
     def test_format_score_line_hides_sentinel_scores_before_game(self):
         format_score_line = _load_function(
