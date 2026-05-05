@@ -60,15 +60,18 @@ test('shouldRefreshLiveScores starts inside live window and skips final games', 
   );
 });
 
-test('buildStandingsFields splits rankings into inline columns', () => {
+test('buildStandingsFields splits rankings into three inline columns', () => {
   const fields = buildStandingsFields([
     { team: 'KT', win: 31, lose: 21, draw: 0, rate: '0.677', streak: '3연승' },
     { team: 'LG', win: 30, lose: 19, draw: 1, rate: '0.633', streak: '1패' }
   ]);
 
   assert.deepEqual(fields, [
-    { name: '순위', value: '1\n2', inline: true },
-    { name: '팀', value: 'KT 🔥\nLG', inline: true },
+    {
+      name: '순위 팀',
+      value: '1 <:KT:1242717652447662111> KT 🔥\n2 <:LG:1242717643966779404> LG',
+      inline: true
+    },
     { name: '전적', value: '31승 21패 0무\n30승 19패 1무', inline: true },
     { name: '승률', value: '0.677\n0.633', inline: true }
   ]);

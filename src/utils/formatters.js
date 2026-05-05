@@ -25,22 +25,20 @@ export function findStandingsTeam(standings, teamName) {
 }
 
 export function buildStandingsFields(standings) {
-  const ranks = [];
-  const teams = [];
+  const rankedTeams = [];
   const records = [];
   const rates = [];
 
   standings.forEach((team, index) => {
     const hotStreak = isHotStreak(team.streak) ? ' 🔥' : '';
-    ranks.push(String(index + 1));
-    teams.push(`${team.team}${hotStreak}`);
+    const teamLogo = logoEmoji[team.team] ?? '';
+    rankedTeams.push(`${index + 1} ${teamLogo} ${team.team}${hotStreak}`.trim());
     records.push(`${team.win}승 ${team.lose}패 ${team.draw}무`);
     rates.push(String(team.rate));
   });
 
   return [
-    { name: '순위', value: ranks.join('\n'), inline: true },
-    { name: '팀', value: teams.join('\n'), inline: true },
+    { name: '순위 팀', value: rankedTeams.join('\n'), inline: true },
     { name: '전적', value: records.join('\n'), inline: true },
     { name: '승률', value: rates.join('\n'), inline: true }
   ];
