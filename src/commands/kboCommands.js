@@ -30,6 +30,7 @@ import {
   buildPlayerCandidateResponse,
   buildPlayerEmbed
 } from '../utils/playerViews.js';
+import { buildTeamRecordFields } from '../utils/teamViews.js';
 
 function createdFooter(embed) {
   return embed.setFooter({ text: 'Created' }).setTimestamp(new Date());
@@ -133,17 +134,7 @@ export function createCommands(dependencies) {
             .setTitle(`${logoEmoji[team.team] ?? ''} ${team.team} 성적`)
             .setURL('https://sports.news.naver.com/kbaseball/record/index?category=kbo')
             .setColor(0x00AEEF)
-            .addFields(
-              {
-                name: '요약',
-                value: `${team.id}위 · ${team.win}승 ${team.lose}패 ${team.draw}무 (${team.rate})`,
-                inline: false
-              },
-              { name: '최근 10경기', value: team.last10, inline: true },
-              { name: '연속', value: team.streak, inline: true },
-              { name: '홈', value: team.home, inline: true },
-              { name: '원정', value: team.away, inline: true }
-            )
+            .addFields(buildTeamRecordFields(team))
         );
 
         await interaction.editReply({ embeds: [embed] });
