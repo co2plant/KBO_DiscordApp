@@ -39,6 +39,10 @@ import {
   buildPlayerEmbed
 } from '../utils/playerViews.js';
 import { buildTeamRecordFields } from '../utils/teamViews.js';
+import {
+  buildHelpFields,
+  buildHelpIntro
+} from '../utils/helpViews.js';
 
 function createdFooter(embed) {
   return embed.setFooter({ text: 'Created' }).setTimestamp(new Date());
@@ -146,6 +150,22 @@ export function createCommands(dependencies) {
         .setDescription('돌승엽이 잘한 경우에 사용하십시오.'),
       async execute(interaction) {
         await interaction.reply('쉬어!');
+      }
+    },
+    {
+      data: new SlashCommandBuilder()
+        .setName('도움말')
+        .setDescription('KBO 봇 사용법과 주요 명령어를 보여줍니다.'),
+      async execute(interaction) {
+        const embed = createdFooter(
+          new EmbedBuilder()
+            .setTitle('KBO 봇 도움말')
+            .setDescription(buildHelpIntro())
+            .setColor(0x00AEEF)
+            .addFields(buildHelpFields())
+        );
+
+        await interaction.reply({ embeds: [embed], ephemeral: true });
       }
     },
     {
