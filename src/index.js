@@ -13,6 +13,7 @@ import { createCommands } from './commands/kboCommands.js';
 import * as crawler from './services/kboCrawler.js';
 import * as database from './services/database.js';
 import { ensureDataReady } from './services/dataReady.js';
+import { scheduleAlertWorker } from './services/alertWorker.js';
 import {
   handlePlayerComponent,
   isPlayerComponent
@@ -23,6 +24,7 @@ assertConfig();
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const commands = createCommands({ database, crawler });
 const commandMap = new Map(commands.map((command) => [command.data.name, command]));
+let alertWorkerTimer;
 
 async function registerGuildCommands(applicationId) {
   const rest = new REST({ version: '10' }).setToken(config.discordToken);
@@ -67,6 +69,7 @@ client.once(Events.ClientReady, async (readyClient) => {
   await registerGuildCommands(readyClient.user.id);
   await ensureDataReady(database, crawler);
   scheduleDailyKst(6, dailyRefresh);
+  alertWorkerTimer = scheduleAlertWorker({ client: readyClient, database, crawler });
   console.log('KBO bot is ready.');
 });
 
@@ -97,12 +100,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 process.on('SIGINT', async () => {
+  if (alertWorkerTimer) {
+    clearInterval(alertWorkerTimer);
+  }
   await database.closePool();
   client.destroy();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
+  if (alertWorkerTimer) {
+    clearInterval(alertWorkerTimer);
+  }
   await database.closePool();
   client.destroy();
   process.exit(0);

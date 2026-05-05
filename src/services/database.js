@@ -92,6 +92,34 @@ export async function ensureSchema() {
       INDEX idx_players_name_team (name, team)
     )
   `);
+  await execute(`
+    CREATE TABLE IF NOT EXISTS UserAlerts (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      discord_user_id VARCHAR(32) NOT NULL,
+      alert_type VARCHAR(32) NOT NULL,
+      team VARCHAR(32) NOT NULL,
+      notify_before_minutes INT NOT NULL DEFAULT 10,
+      enabled TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_user_alert (discord_user_id, alert_type, team),
+      INDEX idx_user_alerts_enabled (enabled, team, alert_type)
+    )
+  `);
+  await execute(`
+    CREATE TABLE IF NOT EXISTS AlertDeliveries (
+      delivery_key VARCHAR(128) PRIMARY KEY,
+      discord_user_id VARCHAR(32) NOT NULL,
+      alert_type VARCHAR(32) NOT NULL,
+      game_id VARCHAR(32) NOT NULL,
+      status VARCHAR(16) NOT NULL DEFAULT 'pending',
+      error_message VARCHAR(512) NOT NULL DEFAULT '',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      sent_at TIMESTAMP NULL DEFAULT NULL,
+      INDEX idx_alert_deliveries_user (discord_user_id, created_at),
+      INDEX idx_alert_deliveries_game (game_id, alert_type)
+    )
+  `);
   const [indexes] = await execute("SHOW INDEX FROM Standings WHERE Key_name = 'PRIMARY'");
   const primaryColumns = indexes.map((row) => row.Column_name);
   if (primaryColumns.length > 0 && !(primaryColumns.length === 1 && primaryColumns[0] === 'team')) {
@@ -257,6 +285,135 @@ export async function upsertPlayer(player) {
       player.detailUrl,
       player.detailType
     ]
+  );
+}
+
+function mapUserAlert(row) {
+  return {
+    id: Number(row.id),
+    discordUserId: row.discord_user_id,
+    alertType: row.alert_type,
+    team: row.team,
+    notifyBeforeMinutes: Number(row.notify_before_minutes),
+    enabled: Boolean(row.enabled)
+  };
+}
+
+export async function upsertUserAlert(alert) {
+  await ensureSchema();
+  await execute(
+    `
+      INSERT INTO UserAlerts (discord_user_id, alert_type, team, notify_before_minutes, enabled)
+      VALUES (?, ?, ?, ?, 1)
+      ON DUPLICATE KEY UPDATE
+        notify_before_minutes = VALUES(notify_before_minutes),
+        enabled = 1
+    `,
+    [
+      String(alert.discordUserId),
+      alert.alertType,
+      alert.team,
+      alert.notifyBeforeMinutes
+    ]
+  );
+}
+
+export async function deleteUserAlert(alert) {
+  await ensureSchema();
+  const [result] = await execute(
+    `
+      DELETE FROM UserAlerts
+      WHERE discord_user_id = ?
+        AND alert_type = ?
+        AND team = ?
+    `,
+    [String(alert.discordUserId), alert.alertType, alert.team]
+  );
+  return Number(result.affectedRows ?? 0) > 0;
+}
+
+export async function selectUserAlerts(discordUserId) {
+  await ensureSchema();
+  const [rows] = await execute(
+    `
+      SELECT *
+      FROM UserAlerts
+      WHERE discord_user_id = ?
+      ORDER BY team, alert_type
+    `,
+    [String(discordUserId)]
+  );
+  return rows.map(mapUserAlert);
+}
+
+export async function selectEnabledUserAlerts() {
+  await ensureSchema();
+  const [rows] = await execute(
+    `
+      SELECT *
+      FROM UserAlerts
+      WHERE enabled = 1
+      ORDER BY team, alert_type, discord_user_id
+    `
+  );
+  return rows.map(mapUserAlert);
+}
+
+export async function claimAlertDelivery(delivery) {
+  await ensureSchema();
+  try {
+    await execute(
+      `
+        INSERT INTO AlertDeliveries (
+          delivery_key,
+          discord_user_id,
+          alert_type,
+          game_id,
+          status
+        )
+        VALUES (?, ?, ?, ?, 'pending')
+      `,
+      [
+        delivery.deliveryKey,
+        String(delivery.discordUserId),
+        delivery.alertType,
+        delivery.gameId
+      ]
+    );
+    return true;
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
+export async function markAlertDeliverySent(deliveryKey) {
+  await ensureSchema();
+  await execute(
+    `
+      UPDATE AlertDeliveries
+      SET status = 'sent',
+          error_message = '',
+          sent_at = CURRENT_TIMESTAMP
+      WHERE delivery_key = ?
+    `,
+    [deliveryKey]
+  );
+}
+
+export async function markAlertDeliveryFailed(deliveryKey, errorMessage) {
+  await ensureSchema();
+  await execute(
+    `
+      UPDATE AlertDeliveries
+      SET status = 'failed',
+          error_message = ?
+      WHERE delivery_key = ?
+    `,
+    [String(errorMessage ?? '').slice(0, 512), deliveryKey]
   );
 }
 

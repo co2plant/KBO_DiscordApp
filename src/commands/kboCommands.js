@@ -27,6 +27,13 @@ import {
 } from '../utils/formatters.js';
 import { resolvePlayerLookup } from '../services/playerLookup.js';
 import {
+  ALERT_TYPES,
+  ALERT_TYPE_LABELS,
+  DEFAULT_NOTIFY_BEFORE_MINUTES,
+  normalizeAlertTeam,
+  normalizeNotifyBeforeMinutes
+} from '../services/alerts.js';
+import {
   buildPlayerCandidateResponse,
   buildPlayerEmbed
 } from '../utils/playerViews.js';
@@ -59,6 +66,49 @@ function teamDisplayName(teamRow, teamGames, requestedTeam) {
   return normalizeTeamName(firstGame.away) === normalizeTeamName(requestedTeam)
     ? firstGame.away
     : firstGame.home;
+}
+
+const alertTypeChoices = [
+  { name: '경기 시작', value: ALERT_TYPES.GAME_START },
+  { name: '경기 종료', value: ALERT_TYPES.GAME_RESULT }
+];
+
+const teamChoices = Object.keys(logoEmoji).map((team) => ({ name: team, value: team }));
+
+function addAlertOptions(command, includeMinutes = false) {
+  command
+    .addStringOption((option) => (
+      option.setName('team')
+        .setDescription('알림을 받을 팀을 선택하세요.')
+        .setRequired(true)
+        .addChoices(...teamChoices)
+    ))
+    .addStringOption((option) => (
+      option.setName('type')
+        .setDescription('알림 종류를 선택하세요.')
+        .setRequired(true)
+        .addChoices(...alertTypeChoices)
+    ));
+
+  if (includeMinutes) {
+    command.addIntegerOption((option) => (
+      option.setName('minutes')
+        .setDescription('경기 시작 몇 분 전에 받을지 선택하세요. 기본값은 10분입니다.')
+        .setRequired(false)
+        .setMinValue(1)
+        .setMaxValue(60)
+    ));
+  }
+
+  return command;
+}
+
+function formatAlertLine(alert) {
+  const label = ALERT_TYPE_LABELS[alert.alertType] ?? alert.alertType;
+  const timing = alert.alertType === ALERT_TYPES.GAME_START
+    ? `(${alert.notifyBeforeMinutes}분 전)`
+    : '(경기 종료 후)';
+  return `${logoEmoji[alert.team] ?? ''} ${alert.team} ${label} ${timing}`.trim();
 }
 
 export function createCommands(dependencies) {
@@ -220,6 +270,86 @@ export function createCommands(dependencies) {
         }
 
         await interaction.editReply({ embeds: [buildPlayerEmbed(result.player)], components: [] });
+      }
+    },
+    {
+      data: addAlertOptions(
+        new SlashCommandBuilder()
+          .setName('알림설정')
+          .setDescription('개인 DM으로 받을 KBO 팀 알림을 설정합니다.'),
+        true
+      ),
+      async execute(interaction) {
+        await database.ensureSchema();
+
+        const team = normalizeAlertTeam(interaction.options.getString('team', true));
+        const alertType = interaction.options.getString('type', true);
+        if (!team || !Object.values(ALERT_TYPES).includes(alertType)) {
+          await interaction.reply({ content: '알림 설정 값을 확인할 수 없습니다.', ephemeral: true });
+          return;
+        }
+
+        const notifyBeforeMinutes = alertType === ALERT_TYPES.GAME_START
+          ? normalizeNotifyBeforeMinutes(interaction.options.getInteger('minutes') ?? DEFAULT_NOTIFY_BEFORE_MINUTES)
+          : DEFAULT_NOTIFY_BEFORE_MINUTES;
+
+        await database.upsertUserAlert({
+          discordUserId: interaction.user.id,
+          alertType,
+          team,
+          notifyBeforeMinutes
+        });
+
+        await interaction.reply({
+          content: `${formatAlertLine({ alertType, team, notifyBeforeMinutes })} 알림을 설정했습니다.`,
+          ephemeral: true
+        });
+      }
+    },
+    {
+      data: addAlertOptions(
+        new SlashCommandBuilder()
+          .setName('알림해제')
+          .setDescription('설정한 개인 KBO 팀 알림을 해제합니다.')
+      ),
+      async execute(interaction) {
+        await database.ensureSchema();
+
+        const team = normalizeAlertTeam(interaction.options.getString('team', true));
+        const alertType = interaction.options.getString('type', true);
+        if (!team || !Object.values(ALERT_TYPES).includes(alertType)) {
+          await interaction.reply({ content: '알림 해제 값을 확인할 수 없습니다.', ephemeral: true });
+          return;
+        }
+
+        const deleted = await database.deleteUserAlert({
+          discordUserId: interaction.user.id,
+          alertType,
+          team
+        });
+
+        await interaction.reply({
+          content: deleted
+            ? `${formatAlertLine({ alertType, team, notifyBeforeMinutes: DEFAULT_NOTIFY_BEFORE_MINUTES })} 알림을 해제했습니다.`
+            : '해제할 알림을 찾지 못했습니다.',
+          ephemeral: true
+        });
+      }
+    },
+    {
+      data: new SlashCommandBuilder()
+        .setName('내알림')
+        .setDescription('내가 설정한 개인 KBO 팀 알림 목록을 보여줍니다.'),
+      async execute(interaction) {
+        await database.ensureSchema();
+
+        const alerts = await database.selectUserAlerts(interaction.user.id);
+        await interaction.reply({
+          content: alerts.length
+            ? alerts.map(formatAlertLine).join('\n')
+            : '설정된 알림이 없습니다.',
+          ephemeral: true
+        });
       }
     },
     {
