@@ -198,39 +198,6 @@ export function createCommands(dependencies) {
     },
     {
       data: new SlashCommandBuilder()
-        .setName('스코어')
-        .setDescription('오늘 KBO 경기 스코어를 보여줍니다.'),
-      async execute(interaction) {
-        await interaction.deferReply();
-        await ensureDataReady(database, crawler);
-
-        const selectedDate = nowKst();
-        const selectedDateKey = toMmdd(selectedDate);
-        await ensureScheduleDataForDate(database, crawler, selectedDateKey);
-
-        const rows = await refreshLiveScoresForCommand(database, crawler, selectedDateKey, selectedDate);
-        if (!rows?.length) {
-          await interaction.editReply('오늘 경기 스코어를 찾을 수 없습니다.');
-          return;
-        }
-
-        const embed = createdFooter(
-          new EmbedBuilder()
-            .setTitle(`${formatKoreanMonthDay(selectedDate)} KBO 스코어`)
-            .setURL(`https://m.sports.naver.com/kbaseball/schedule/index?date=${toYmd(selectedDate)}`)
-            .setColor(0x00AEEF)
-            .addFields({
-              name: '오늘 스코어',
-              value: rows.map((row) => formatScoreLine(selectedDate, row, { now: nowKst() })).join('\n'),
-              inline: false
-            })
-        );
-
-        await interaction.editReply({ embeds: [embed] });
-      }
-    },
-    {
-      data: new SlashCommandBuilder()
         .setName('선수')
         .setDescription('선수 이름으로 KBO 기본 정보를 조회합니다.')
         .addStringOption((option) => (
