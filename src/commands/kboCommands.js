@@ -14,7 +14,8 @@ import {
   ensureDataReady,
   ensureScheduleDataForDate,
   refreshLiveScoresForCommand,
-  refreshStandingsForCommand
+  refreshStandingsForCommand,
+  selectScheduleRowsForCommand
 } from '../services/dataReady.js';
 import {
   buildStandingsFields,
@@ -164,9 +165,8 @@ export function createCommands(dependencies) {
         const selectedDay = { '오늘': 0, '내일': 1, '모레': 2 }[interaction.options.getString('date', true)];
         const selectedDate = addKstDays(nowKst(), selectedDay);
         const selectedDateKey = toMmdd(selectedDate);
-        await ensureScheduleDataForDate(database, crawler, selectedDateKey);
 
-        const rows = await database.selectGamesAndScores(selectedDateKey);
+        const rows = await selectScheduleRowsForCommand(database, crawler, selectedDateKey, selectedDate);
         if (selectedDate.getUTCDay() === 1 || !rows?.length) {
           await interaction.editReply('경기가 없는 날입니다.');
           return;

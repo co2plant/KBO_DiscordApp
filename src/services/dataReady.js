@@ -44,9 +44,10 @@ export async function ensureScheduleDataForDate(database, crawler, selectedDateK
   }
 }
 
-export async function refreshLiveScoresForCommand(database, crawler, selectedDateKey, selectedDate) {
+export async function refreshLiveScoresForCommand(database, crawler, selectedDateKey, selectedDate, options = {}) {
   const games = await database.selectGamesAndScores(selectedDateKey);
-  if (!shouldRefreshLiveScores(selectedDate, games, { now: nowKst() })) {
+  const now = options.now ?? nowKst();
+  if (!shouldRefreshLiveScores(selectedDate, games, { now })) {
     return games;
   }
 
@@ -59,6 +60,11 @@ export async function refreshLiveScoresForCommand(database, crawler, selectedDat
   }
 
   return database.selectGamesAndScores(selectedDateKey);
+}
+
+export async function selectScheduleRowsForCommand(database, crawler, selectedDateKey, selectedDate, options = {}) {
+  await ensureScheduleDataForDate(database, crawler, selectedDateKey);
+  return refreshLiveScoresForCommand(database, crawler, selectedDateKey, selectedDate, options);
 }
 
 export function resetDataReadyForTests() {
