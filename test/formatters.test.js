@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  buildStandingsFields,
   findTeamGames,
   formatScoreLine,
   isHotStreak,
@@ -57,4 +58,18 @@ test('shouldRefreshLiveScores starts inside live window and skips final games', 
     shouldRefreshLiveScores(selectedDate, [{ ...rows[0], remarks: '경기종료' }], { now }),
     false
   );
+});
+
+test('buildStandingsFields splits rankings into inline columns', () => {
+  const fields = buildStandingsFields([
+    { team: 'KT', win: 31, lose: 21, draw: 0, rate: '0.677', streak: '3연승' },
+    { team: 'LG', win: 30, lose: 19, draw: 1, rate: '0.633', streak: '1패' }
+  ]);
+
+  assert.deepEqual(fields, [
+    { name: '순위', value: '1\n2', inline: true },
+    { name: '팀', value: 'KT 🔥\nLG', inline: true },
+    { name: '전적', value: '31승 21패 0무\n30승 19패 1무', inline: true },
+    { name: '승률', value: '0.677\n0.633', inline: true }
+  ]);
 });

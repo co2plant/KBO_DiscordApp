@@ -24,6 +24,28 @@ export function findStandingsTeam(standings, teamName) {
   return standings.find((team) => normalizeTeamName(team.team) === normalized) ?? null;
 }
 
+export function buildStandingsFields(standings) {
+  const ranks = [];
+  const teams = [];
+  const records = [];
+  const rates = [];
+
+  standings.forEach((team, index) => {
+    const hotStreak = isHotStreak(team.streak) ? ' 🔥' : '';
+    ranks.push(String(index + 1));
+    teams.push(`${team.team}${hotStreak}`);
+    records.push(`${team.win}승 ${team.lose}패 ${team.draw}무`);
+    rates.push(String(team.rate));
+  });
+
+  return [
+    { name: '순위', value: ranks.join('\n'), inline: true },
+    { name: '팀', value: teams.join('\n'), inline: true },
+    { name: '전적', value: records.join('\n'), inline: true },
+    { name: '승률', value: rates.join('\n'), inline: true }
+  ];
+}
+
 function normalizeScore(score) {
   return score === null || score === undefined || score === '' || Number(score) === -1 ? 0 : Number(score);
 }

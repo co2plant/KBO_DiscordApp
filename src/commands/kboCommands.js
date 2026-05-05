@@ -17,11 +17,11 @@ import {
   refreshStandingsForCommand
 } from '../services/dataReady.js';
 import {
+  buildStandingsFields,
   findStandingsTeam,
   findTeamGames,
   formatScheduleMatchup,
   formatScoreLine,
-  isHotStreak,
   normalizeTeamName
 } from '../utils/formatters.js';
 
@@ -30,21 +30,12 @@ function createdFooter(embed) {
 }
 
 function buildStandingsEmbed(rows) {
-  const lines = ['순위 | 팀 | 승 | 패 | 무 | 승률'];
-  rows.forEach((team, index) => {
-    const hotStreak = isHotStreak(team.streak) ? ' 🔥' : '';
-    lines.push(
-      `${rankEmoji[index + 1]} | ${logoEmoji[team.team] ?? ''} ${team.team}${hotStreak} | `
-      + `${team.win} | ${team.lose} | ${team.draw} | ${team.rate}`
-    );
-  });
-
   return createdFooter(
     new EmbedBuilder()
       .setTitle('KBO 순위')
       .setURL('https://sports.news.naver.com/kbaseball/record/index?category=kbo')
       .setColor(0x00AEEF)
-      .addFields({ name: '전체 순위', value: lines.join('\n'), inline: false })
+      .addFields(buildStandingsFields(rows))
   );
 }
 
