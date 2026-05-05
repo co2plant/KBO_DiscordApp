@@ -1,0 +1,20 @@
+{
+  "name": "kbo-discord-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test --test-isolation=none",
+    "check": "node --check src/index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "mysql2": "^3.11.3",
+    "puppeteer-core": "^23.6.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
