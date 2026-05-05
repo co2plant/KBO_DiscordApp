@@ -31,7 +31,6 @@ import {
   ALERT_TYPES,
   ALERT_TYPE_LABELS,
   DEFAULT_NOTIFY_BEFORE_MINUTES,
-  normalizeAlertTeam,
   normalizeNotifyBeforeMinutes
 } from '../services/alerts.js';
 import {
@@ -43,6 +42,10 @@ import {
   buildHelpFields,
   buildHelpIntro
 } from '../utils/helpViews.js';
+import {
+  normalizeTeamInput,
+  resolvePreferredTeam
+} from '../utils/teamAutocomplete.js';
 
 function createdFooter(embed) {
   return embed.setFooter({ text: 'Created' }).setTimestamp(new Date());
@@ -81,22 +84,25 @@ const alertTypeChoices = [
   { name: '경기 취소', value: ALERT_TYPES.GAME_CANCELLED }
 ];
 
-const teamChoices = Object.keys(logoEmoji).map((team) => ({ name: team, value: team }));
+function addTeamOption(command, description, required = false) {
+  return command.addStringOption((option) => (
+    option.setName('team')
+      .setDescription(description)
+      .setRequired(required)
+      .setAutocomplete(true)
+  ));
+}
 
 function addAlertOptions(command, includeMinutes = false) {
   command
-    .addStringOption((option) => (
-      option.setName('team')
-        .setDescription('알림을 받을 팀을 선택하세요.')
-        .setRequired(true)
-        .addChoices(...teamChoices)
-    ))
     .addStringOption((option) => (
       option.setName('type')
         .setDescription('알림 종류를 선택하세요.')
         .setRequired(true)
         .addChoices(...alertTypeChoices)
     ));
+
+  addTeamOption(command, '알림을 받을 팀을 선택하세요. 비우면 내 팀을 사용합니다.');
 
   if (includeMinutes) {
     command.addIntegerOption((option) => (
@@ -109,6 +115,18 @@ function addAlertOptions(command, includeMinutes = false) {
   }
 
   return command;
+}
+
+async function resolveTeamForCommand(interaction, database) {
+  return resolvePreferredTeam({
+    providedTeam: interaction.options.getString('team') ?? '',
+    discordUserId: interaction.user.id,
+    database
+  });
+}
+
+function missingTeamMessage(commandName) {
+  return `${commandName}에 사용할 팀을 찾지 못했습니다. team을 입력하거나 /내팀설정으로 기본 팀을 먼저 설정하세요.`;
 }
 
 function formatAlertLine(alert) {
@@ -169,6 +187,63 @@ export function createCommands(dependencies) {
       }
     },
     {
+      data: addTeamOption(
+        new SlashCommandBuilder()
+          .setName('내팀설정')
+          .setDescription('자주 보는 KBO 팀을 기본 팀으로 저장합니다.'),
+        '기본 팀으로 저장할 팀을 선택하세요.',
+        true
+      ),
+      async execute(interaction) {
+        await database.ensureSchema();
+
+        const team = normalizeTeamInput(interaction.options.getString('team', true));
+        if (!team) {
+          await interaction.reply({ content: '저장할 팀을 확인할 수 없습니다.', ephemeral: true });
+          return;
+        }
+
+        await database.upsertUserPreference({
+          discordUserId: interaction.user.id,
+          favoriteTeam: team
+        });
+        await interaction.reply({
+          content: `${logoEmoji[team] ?? ''} ${team}을 내 팀으로 설정했습니다.`,
+          ephemeral: true
+        });
+      }
+    },
+    {
+      data: new SlashCommandBuilder()
+        .setName('내팀')
+        .setDescription('내 기본 KBO 팀 설정을 확인합니다.'),
+      async execute(interaction) {
+        await database.ensureSchema();
+
+        const preference = await database.selectUserPreference(interaction.user.id);
+        await interaction.reply({
+          content: preference?.favoriteTeam
+            ? `${logoEmoji[preference.favoriteTeam] ?? ''} 내 팀은 ${preference.favoriteTeam}입니다.`
+            : '설정된 내 팀이 없습니다. /내팀설정으로 먼저 저장하세요.',
+          ephemeral: true
+        });
+      }
+    },
+    {
+      data: new SlashCommandBuilder()
+        .setName('내팀해제')
+        .setDescription('저장한 기본 KBO 팀 설정을 삭제합니다.'),
+      async execute(interaction) {
+        await database.ensureSchema();
+
+        const deleted = await database.deleteUserPreference(interaction.user.id);
+        await interaction.reply({
+          content: deleted ? '내 팀 설정을 해제했습니다.' : '해제할 내 팀 설정이 없습니다.',
+          ephemeral: true
+        });
+      }
+    },
+    {
       data: new SlashCommandBuilder()
         .setName('순위')
         .setDescription('돌승엽이 KBO 순위를 당신에게 보여줍니다.'),
@@ -187,20 +262,23 @@ export function createCommands(dependencies) {
       }
     },
     {
-      data: new SlashCommandBuilder()
-        .setName('성적')
-        .setDescription('선택한 팀의 KBO 상세 성적을 보여줍니다.')
-        .addStringOption((option) => (
-          option.setName('team')
-            .setDescription('상세 성적을 확인할 팀 이름을 입력하세요.')
-            .setRequired(true)
-        )),
+      data: addTeamOption(
+        new SlashCommandBuilder()
+          .setName('성적')
+          .setDescription('선택한 팀의 KBO 상세 성적을 보여줍니다.'),
+        '상세 성적을 확인할 팀 이름을 입력하세요. 비우면 내 팀을 사용합니다.'
+      ),
       async execute(interaction) {
         await interaction.deferReply();
         await ensureDataReady(database, crawler);
         await refreshStandingsForCommand(database, crawler);
 
-        const teamName = interaction.options.getString('team', true);
+        const teamName = await resolveTeamForCommand(interaction, database);
+        if (!teamName) {
+          await interaction.editReply(missingTeamMessage('/성적'));
+          return;
+        }
+
         const rows = await database.selectStandings();
         const team = findStandingsTeam(rows, teamName);
         if (!team) {
@@ -274,11 +352,13 @@ export function createCommands(dependencies) {
           option.setName('name')
             .setDescription('조회할 선수 이름을 입력하세요.')
             .setRequired(true)
+            .setAutocomplete(true)
         ))
         .addStringOption((option) => (
           option.setName('team')
             .setDescription('동명이인이 있을 때 좁힐 팀 이름을 입력하세요.')
             .setRequired(false)
+            .setAutocomplete(true)
         )),
       async execute(interaction) {
         await interaction.deferReply();
@@ -311,10 +391,10 @@ export function createCommands(dependencies) {
       async execute(interaction) {
         await database.ensureSchema();
 
-        const team = normalizeAlertTeam(interaction.options.getString('team', true));
+        const team = await resolveTeamForCommand(interaction, database);
         const alertType = interaction.options.getString('type', true);
         if (!team || !Object.values(ALERT_TYPES).includes(alertType)) {
-          await interaction.reply({ content: '알림 설정 값을 확인할 수 없습니다.', ephemeral: true });
+          await interaction.reply({ content: missingTeamMessage('/알림설정'), ephemeral: true });
           return;
         }
 
@@ -344,10 +424,10 @@ export function createCommands(dependencies) {
       async execute(interaction) {
         await database.ensureSchema();
 
-        const team = normalizeAlertTeam(interaction.options.getString('team', true));
+        const team = await resolveTeamForCommand(interaction, database);
         const alertType = interaction.options.getString('type', true);
         if (!team || !Object.values(ALERT_TYPES).includes(alertType)) {
-          await interaction.reply({ content: '알림 해제 값을 확인할 수 없습니다.', ephemeral: true });
+          await interaction.reply({ content: missingTeamMessage('/알림해제'), ephemeral: true });
           return;
         }
 
@@ -382,19 +462,22 @@ export function createCommands(dependencies) {
       }
     },
     {
-      data: new SlashCommandBuilder()
-        .setName('경기요약')
-        .setDescription('선택한 팀의 오늘 경기 흐름을 요약합니다.')
-        .addStringOption((option) => (
-          option.setName('team')
-            .setDescription('요약을 확인할 팀 이름을 입력하세요.')
-            .setRequired(true)
-        )),
+      data: addTeamOption(
+        new SlashCommandBuilder()
+          .setName('경기요약')
+          .setDescription('선택한 팀의 오늘 경기 흐름을 요약합니다.'),
+        '요약을 확인할 팀 이름을 입력하세요. 비우면 내 팀을 사용합니다.'
+      ),
       async execute(interaction) {
         await interaction.deferReply();
         await ensureDataReady(database, crawler);
 
-        const requestedTeam = interaction.options.getString('team', true);
+        const requestedTeam = await resolveTeamForCommand(interaction, database);
+        if (!requestedTeam) {
+          await interaction.editReply(missingTeamMessage('/경기요약'));
+          return;
+        }
+
         const selectedDate = nowKst();
         const selectedDateKey = toMmdd(selectedDate);
 
@@ -428,19 +511,22 @@ export function createCommands(dependencies) {
       }
     },
     {
-      data: new SlashCommandBuilder()
-        .setName('팀')
-        .setDescription('선택한 팀의 오늘 경기와 성적 요약을 보여줍니다.')
-        .addStringOption((option) => (
-          option.setName('team')
-            .setDescription('요약을 확인할 팀 이름을 입력하세요.')
-            .setRequired(true)
-        )),
+      data: addTeamOption(
+        new SlashCommandBuilder()
+          .setName('팀')
+          .setDescription('선택한 팀의 오늘 경기와 성적 요약을 보여줍니다.'),
+        '요약을 확인할 팀 이름을 입력하세요. 비우면 내 팀을 사용합니다.'
+      ),
       async execute(interaction) {
         await interaction.deferReply();
         await ensureDataReady(database, crawler);
 
-        const requestedTeam = interaction.options.getString('team', true);
+        const requestedTeam = await resolveTeamForCommand(interaction, database);
+        if (!requestedTeam) {
+          await interaction.editReply(missingTeamMessage('/팀'));
+          return;
+        }
+
         const selectedDate = nowKst();
         const selectedDateKey = toMmdd(selectedDate);
 

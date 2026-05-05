@@ -18,6 +18,10 @@ import {
   handlePlayerComponent,
   isPlayerComponent
 } from './interactions/playerInteractions.js';
+import {
+  handleAutocomplete,
+  isAutocompleteInteraction
+} from './interactions/autocompleteInteractions.js';
 
 assertConfig();
 
@@ -75,6 +79,11 @@ client.once(Events.ClientReady, async (readyClient) => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
+    if (isAutocompleteInteraction(interaction)) {
+      await handleAutocomplete(interaction, { database });
+      return;
+    }
+
     if (interaction.isChatInputCommand()) {
       const command = commandMap.get(interaction.commandName);
       if (!command) {

@@ -1,6 +1,7 @@
 export function buildHelpIntro() {
   return [
     '처음이면 `/일정 date:오늘`로 오늘 경기부터 확인하세요.',
+    '`/내팀설정 team:KIA`를 먼저 해두면 팀 입력을 자주 생략할 수 있습니다.',
     '실시간 알림은 `/알림설정`으로 팀과 알림 종류를 골라 개인 DM으로 받을 수 있습니다.'
   ].join('\n');
 }
@@ -12,7 +13,8 @@ export function buildHelpFields() {
       value: [
         '`/일정 date:오늘` 오늘 경기와 실시간 점수',
         '`/경기요약 team:KIA` 오늘 해당 팀 경기 요약',
-        '`/팀 team:KIA` 오늘 경기와 팀 성적 요약'
+        '`/팀 team:KIA` 오늘 경기와 팀 성적 요약',
+        '`/내팀설정 team:KIA` 기본 팀 저장'
       ].join('\n'),
       inline: false
     },

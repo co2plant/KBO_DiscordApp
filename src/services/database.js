@@ -138,6 +138,14 @@ export async function ensureSchema() {
       INDEX idx_score_snapshots_game_date (game_date)
     )
   `);
+  await execute(`
+    CREATE TABLE IF NOT EXISTS UserPreferences (
+      discord_user_id VARCHAR(32) PRIMARY KEY,
+      favorite_team VARCHAR(32) NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
   const [indexes] = await execute("SHOW INDEX FROM Standings WHERE Key_name = 'PRIMARY'");
   const primaryColumns = indexes.map((row) => row.Column_name);
   if (primaryColumns.length > 0 && !(primaryColumns.length === 1 && primaryColumns[0] === 'team')) {
@@ -243,6 +251,33 @@ export async function selectPlayerByNameAndTeam(name, team) {
     [String(name), String(team)]
   );
   return rows[0] ? mapPlayer(rows[0]) : null;
+}
+
+export async function selectPlayerAutocomplete(keyword) {
+  await ensureSchema();
+  const normalizedKeyword = String(keyword ?? '').trim();
+  if (!normalizedKeyword) {
+    return [];
+  }
+
+  const [rows] = await execute(
+    `
+      SELECT
+        name,
+        GROUP_CONCAT(DISTINCT team ORDER BY team SEPARATOR ', ') AS teams
+      FROM Players
+      WHERE name LIKE CONCAT(?, '%')
+      GROUP BY name
+      ORDER BY name
+      LIMIT 25
+    `,
+    [normalizedKeyword]
+  );
+
+  return rows.map((row) => ({
+    name: row.name,
+    teams: row.teams ?? ''
+  }));
 }
 
 export async function upsertPlayer(player) {
@@ -509,6 +544,44 @@ export async function upsertScoreSnapshots(snapshots) {
       ]
     );
   }
+}
+
+function mapUserPreference(row) {
+  return {
+    discordUserId: row.discord_user_id,
+    favoriteTeam: row.favorite_team
+  };
+}
+
+export async function upsertUserPreference(preference) {
+  await ensureSchema();
+  await execute(
+    `
+      INSERT INTO UserPreferences (discord_user_id, favorite_team)
+      VALUES (?, ?)
+      ON DUPLICATE KEY UPDATE
+        favorite_team = VALUES(favorite_team)
+    `,
+    [String(preference.discordUserId), preference.favoriteTeam]
+  );
+}
+
+export async function selectUserPreference(discordUserId) {
+  await ensureSchema();
+  const [rows] = await execute(
+    'SELECT * FROM UserPreferences WHERE discord_user_id = ? LIMIT 1',
+    [String(discordUserId)]
+  );
+  return rows[0] ? mapUserPreference(rows[0]) : null;
+}
+
+export async function deleteUserPreference(discordUserId) {
+  await ensureSchema();
+  const [result] = await execute(
+    'DELETE FROM UserPreferences WHERE discord_user_id = ?',
+    [String(discordUserId)]
+  );
+  return Number(result.affectedRows ?? 0) > 0;
 }
 
 export async function upsertGameAndScore(game) {
