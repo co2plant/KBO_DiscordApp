@@ -25,3 +25,12 @@ test('database exposes player autocomplete lookup for slash command suggestions'
   assert.match(source, /export async function selectPlayerAutocomplete/);
   assert.match(source, /GROUP_CONCAT\(DISTINCT team/);
 });
+
+test('database schema includes command logs for production usage audit', () => {
+  const source = readFileSync('src/services/database.js', 'utf8');
+
+  assert.match(source, /CREATE TABLE IF NOT EXISTS CommandLogs/);
+  assert.match(source, /export async function insertCommandLog/);
+  assert.match(source, /interaction_id VARCHAR\(32\) NOT NULL UNIQUE/);
+  assert.match(source, /duration_ms INT NOT NULL/);
+});

@@ -146,6 +146,25 @@ export async function ensureSchema() {
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     )
   `);
+  await execute(`
+    CREATE TABLE IF NOT EXISTS CommandLogs (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      interaction_id VARCHAR(32) NOT NULL UNIQUE,
+      command_name VARCHAR(64) NOT NULL,
+      discord_user_id VARCHAR(32) NOT NULL,
+      guild_id VARCHAR(32) NOT NULL,
+      channel_id VARCHAR(32) NOT NULL,
+      options_json TEXT NOT NULL,
+      status VARCHAR(16) NOT NULL,
+      duration_ms INT NOT NULL,
+      error_message VARCHAR(512) NOT NULL DEFAULT '',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_command_logs_created_at (created_at),
+      INDEX idx_command_logs_command_created (command_name, created_at),
+      INDEX idx_command_logs_user_created (discord_user_id, created_at),
+      INDEX idx_command_logs_status_created (status, created_at)
+    )
+  `);
   const [indexes] = await execute("SHOW INDEX FROM Standings WHERE Key_name = 'PRIMARY'");
   const primaryColumns = indexes.map((row) => row.Column_name);
   if (primaryColumns.length > 0 && !(primaryColumns.length === 1 && primaryColumns[0] === 'team')) {
@@ -582,6 +601,47 @@ export async function deleteUserPreference(discordUserId) {
     [String(discordUserId)]
   );
   return Number(result.affectedRows ?? 0) > 0;
+}
+
+export async function insertCommandLog(entry) {
+  await ensureSchema();
+  try {
+    await execute(
+      `
+        INSERT INTO CommandLogs (
+          interaction_id,
+          command_name,
+          discord_user_id,
+          guild_id,
+          channel_id,
+          options_json,
+          status,
+          duration_ms,
+          error_message
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        entry.interactionId,
+        entry.commandName,
+        entry.discordUserId,
+        entry.guildId,
+        entry.channelId,
+        entry.optionsJson,
+        entry.status,
+        entry.durationMs,
+        entry.errorMessage
+      ]
+    );
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      return false;
+    }
+
+    throw error;
+  }
+
+  return true;
 }
 
 export async function upsertGameAndScore(game) {

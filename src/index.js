@@ -22,6 +22,7 @@ import {
   handleAutocomplete,
   isAutocompleteInteraction
 } from './interactions/autocompleteInteractions.js';
+import { recordCommandLog } from './services/commandLogger.js';
 
 assertConfig();
 
@@ -78,6 +79,7 @@ client.once(Events.ClientReady, async (readyClient) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
+  const startedAt = Date.now();
   try {
     if (isAutocompleteInteraction(interaction)) {
       await handleAutocomplete(interaction, { database });
@@ -91,6 +93,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       await command.execute(interaction);
+      await recordCommandLog(database, interaction, {
+        status: 'success',
+        durationMs: Date.now() - startedAt
+      });
       return;
     }
 
@@ -99,6 +105,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
   } catch (error) {
     console.error(`Interaction failed: ${interaction.commandName ?? interaction.customId}`, error);
+    if (interaction.isChatInputCommand()) {
+      await recordCommandLog(database, interaction, {
+        status: 'failed',
+        durationMs: Date.now() - startedAt,
+        error
+      });
+    }
     const message = '명령 처리 중 오류가 발생했습니다.';
     if (interaction.deferred || interaction.replied) {
       await interaction.editReply(message);
