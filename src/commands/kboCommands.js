@@ -249,7 +249,7 @@ export function createCommands(dependencies) {
 
         const name = interaction.options.getString('name', true);
         const team = interaction.options.getString('team') ?? '';
-        const result = await resolvePlayerLookup({ name, team }, database, crawler);
+        const result = await resolvePlayerLookup({ name, team }, database, crawler, { refreshDetail: true });
 
         if (result.type === 'not_found') {
           await interaction.editReply(`${name} 선수 정보를 찾을 수 없습니다.`);

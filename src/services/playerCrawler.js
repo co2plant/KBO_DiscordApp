@@ -50,6 +50,58 @@ function labelValue(html, label) {
   return stripTags(firstMatch(html, pattern));
 }
 
+function parseTableRows(tableHtml) {
+  const headers = [...String(tableHtml ?? '').matchAll(/<th\b[^>]*>([\s\S]*?)<\/th>/gi)]
+    .map((match) => stripTags(match[1]))
+    .filter(Boolean);
+  const body = firstMatch(tableHtml, /<tbody\b[^>]*>([\s\S]*?)<\/tbody>/i);
+  const firstRow = firstMatch(body, /<tr\b[^>]*>([\s\S]*?)<\/tr>/i);
+  const values = [...firstRow.matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)]
+    .map((match) => stripTags(match[1]));
+
+  return { headers, values };
+}
+
+function firstSeasonBlock(html) {
+  const match = String(html ?? '').match(/<h6>\s*(\d{4})\s*성적\s*<\/h6>([\s\S]*?)(?=<h6>|$)/i);
+  if (!match) {
+    return { year: '', block: '' };
+  }
+
+  return {
+    year: match[1],
+    block: match[2]
+  };
+}
+
+export function parsePlayerSeasonStats(html, detailType = 'hitter') {
+  const { year, block } = firstSeasonBlock(html);
+  if (!block) {
+    return null;
+  }
+
+  const stats = {};
+  const tables = [...block.matchAll(/<table\b[^>]*>([\s\S]*?)<\/table>/gi)];
+  for (const [, table] of tables) {
+    const { headers, values } = parseTableRows(table);
+    headers.forEach((header, index) => {
+      if (values[index] !== undefined && values[index] !== '') {
+        stats[header] = values[index];
+      }
+    });
+  }
+
+  if (Object.keys(stats).length === 0) {
+    return null;
+  }
+
+  return {
+    year,
+    type: detailType,
+    stats
+  };
+}
+
 async function requestText(url, options = {}) {
   const response = await fetch(url, {
     headers: {
@@ -113,10 +165,12 @@ export function parsePlayerDetail(html, source = {}) {
     /<img[^>]*id=['"][^'"]*playerProfile_imgProgile[^'"]*['"][^>]*src=['"]([^'"]+)['"]/i
   ));
 
+  const detailType = source.detailType ?? parseDetailType(detailUrl);
+
   return {
     playerId,
     detailUrl,
-    detailType: source.detailType ?? parseDetailType(detailUrl),
+    detailType,
     team: shortTeamName(teamName),
     teamName,
     name: labelValue(html, '선수명'),
@@ -129,7 +183,8 @@ export function parsePlayerDetail(html, source = {}) {
     salary: labelValue(html, '연봉'),
     draft: labelValue(html, '지명순위'),
     joinInfo: labelValue(html, '입단년도'),
-    profileImageUrl
+    profileImageUrl,
+    seasonStats: parsePlayerSeasonStats(html, detailType)
   };
 }
 

@@ -41,6 +41,56 @@ test('buildPlayerEmbed renders player profile fields', () => {
   ]);
 });
 
+test('buildPlayerEmbed renders hitter season stats when present', () => {
+  const embed = buildPlayerEmbed({
+    ...player,
+    seasonStats: {
+      year: '2026',
+      type: 'hitter',
+      stats: {
+        AVG: '0.188',
+        OPS: '0.656',
+        HR: '0',
+        RBI: '7',
+        SB: '2'
+      }
+    }
+  });
+
+  assert.deepEqual(embed.fields[0], {
+    name: '2026 성적',
+    value: 'AVG 0.188 · OPS 0.656 · HR 0 · RBI 7 · SB 2',
+    inline: false
+  });
+});
+
+test('buildPlayerEmbed renders pitcher season stats when present', () => {
+  const embed = buildPlayerEmbed({
+    ...player,
+    detailType: 'pitcher',
+    seasonStats: {
+      year: '2026',
+      type: 'pitcher',
+      stats: {
+        ERA: '3.99',
+        W: '2',
+        L: '2',
+        SV: '0',
+        HLD: '0',
+        IP: '29 1/3',
+        SO: '24',
+        WHIP: '1.33'
+      }
+    }
+  });
+
+  assert.deepEqual(embed.fields[0], {
+    name: '2026 성적',
+    value: 'ERA 3.99 · 2승 2패 · SV 0 · HLD 0 · IP 29 1/3 · SO 24 · WHIP 1.33',
+    inline: false
+  });
+});
+
 test('buildPlayerCandidateResponse uses buttons for five or fewer candidates', () => {
   const response = buildPlayerCandidateResponse([
     player,

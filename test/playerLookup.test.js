@@ -84,3 +84,36 @@ test('getPlayerById fetches detail and stores it when cache misses', async () =>
   assert.deepEqual(player, detail);
   assert.deepEqual(database.stored.get('66108'), detail);
 });
+
+test('getPlayerById refreshes detail when latest stats are requested even if cached', async () => {
+  const cached = {
+    playerId: '66108',
+    name: '홍창기',
+    team: 'LG',
+    detailUrl: 'https://www.koreabaseball.com/Record/Player/HitterDetail/Basic.aspx?playerId=66108',
+    detailType: 'hitter'
+  };
+  const latest = {
+    ...cached,
+    seasonStats: {
+      year: '2026',
+      type: 'hitter',
+      stats: { AVG: '0.188', OPS: '0.656' }
+    }
+  };
+  const database = createFakeDatabase([cached]);
+  let fetchCount = 0;
+  const crawler = {
+    async fetchPlayerDetail(candidate) {
+      fetchCount += 1;
+      assert.equal(candidate.playerId, '66108');
+      return latest;
+    }
+  };
+
+  const player = await getPlayerById('66108', database, crawler, cached, { refreshDetail: true });
+
+  assert.equal(fetchCount, 1);
+  assert.deepEqual(player, latest);
+  assert.deepEqual(database.stored.get('66108'), latest);
+});

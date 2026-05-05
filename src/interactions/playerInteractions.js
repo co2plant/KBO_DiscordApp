@@ -29,6 +29,8 @@ export async function handlePlayerComponent(interaction, dependencies) {
     playerId: parsed.playerId,
     detailType: parsed.detailType,
     detailUrl: buildPlayerDetailUrl(parsed.playerId, parsed.detailType)
+  }, {
+    refreshDetail: true
   });
   await interaction.editReply({
     embeds: [buildPlayerEmbed(player)],

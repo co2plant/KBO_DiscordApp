@@ -29,6 +29,44 @@ function candidateDescription(candidate) {
   ].filter(Boolean).join(' · ').slice(0, 100);
 }
 
+function formatAvailableStats(stats, keys) {
+  return keys
+    .map(([label, key]) => {
+      const value = stats[key];
+      return value === undefined || value === '' ? '' : `${label} ${value}`;
+    })
+    .filter(Boolean);
+}
+
+export function formatPlayerSeasonStats(seasonStats) {
+  if (!seasonStats?.stats) {
+    return '';
+  }
+
+  const stats = seasonStats.stats;
+  if (seasonStats.type === 'pitcher') {
+    return [
+      ...formatAvailableStats(stats, [['ERA', 'ERA']]),
+      `${stats.W ?? 0}승 ${stats.L ?? 0}패`,
+      ...formatAvailableStats(stats, [
+        ['SV', 'SV'],
+        ['HLD', 'HLD'],
+        ['IP', 'IP'],
+        ['SO', 'SO'],
+        ['WHIP', 'WHIP']
+      ])
+    ].filter(Boolean).join(' · ');
+  }
+
+  return formatAvailableStats(stats, [
+    ['AVG', 'AVG'],
+    ['OPS', 'OPS'],
+    ['HR', 'HR'],
+    ['RBI', 'RBI'],
+    ['SB', 'SB']
+  ]).join(' · ');
+}
+
 export function buildPlayerDetailUrl(playerId, detailType = 'hitter') {
   const path = detailType === 'pitcher'
     ? '/Record/Player/PitcherDetail/Basic.aspx'
@@ -38,22 +76,33 @@ export function buildPlayerDetailUrl(playerId, detailType = 'hitter') {
 
 export function buildPlayerEmbed(player) {
   const teamLogo = logoEmoji[player.team] ?? '';
+  const seasonStatsText = formatPlayerSeasonStats(player.seasonStats);
+  const fields = [
+    { name: '팀', value: valueOrDash(player.teamName || player.team), inline: true },
+    { name: '등번호', value: valueOrDash(player.backNo), inline: true },
+    { name: '포지션', value: valueOrDash(player.position), inline: true },
+    { name: '생년월일', value: valueOrDash(player.birthday), inline: true },
+    { name: '신장/체중', value: valueOrDash(player.heightWeight), inline: true },
+    { name: '입단년도', value: valueOrDash(player.joinInfo), inline: true },
+    { name: '경력', value: valueOrDash(player.career), inline: false },
+    { name: '지명순위', value: valueOrDash(player.draft), inline: false },
+    { name: '연봉', value: valueOrDash(player.salary), inline: true },
+    { name: '입단 계약금', value: valueOrDash(player.payment), inline: true }
+  ];
+
+  if (seasonStatsText) {
+    fields.unshift({
+      name: `${player.seasonStats.year} 성적`,
+      value: seasonStatsText,
+      inline: false
+    });
+  }
+
   const embed = {
     title: `${teamLogo} ${player.name} 선수 정보`.trim(),
     url: player.detailUrl,
     color: 0x00AEEF,
-    fields: [
-      { name: '팀', value: valueOrDash(player.teamName || player.team), inline: true },
-      { name: '등번호', value: valueOrDash(player.backNo), inline: true },
-      { name: '포지션', value: valueOrDash(player.position), inline: true },
-      { name: '생년월일', value: valueOrDash(player.birthday), inline: true },
-      { name: '신장/체중', value: valueOrDash(player.heightWeight), inline: true },
-      { name: '입단년도', value: valueOrDash(player.joinInfo), inline: true },
-      { name: '경력', value: valueOrDash(player.career), inline: false },
-      { name: '지명순위', value: valueOrDash(player.draft), inline: false },
-      { name: '연봉', value: valueOrDash(player.salary), inline: true },
-      { name: '입단 계약금', value: valueOrDash(player.payment), inline: true }
-    ]
+    fields
   };
 
   if (player.profileImageUrl) {

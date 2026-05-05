@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   parsePlayerDetail,
+  parsePlayerSeasonStats,
   parsePlayerSearchResults
 } from '../src/services/playerCrawler.js';
 
@@ -104,6 +105,98 @@ test('parsePlayerDetail extracts basic profile from KBO player detail page', () 
     salary: '52000만원',
     draft: '16 LG 2차 3라운드 27순위',
     joinInfo: '16LG',
-    profileImageUrl: 'https://6ptotvmi5753.edge.naverncp.com/KBO_IMAGE/person/middle/2026/66108.jpg'
+    profileImageUrl: 'https://6ptotvmi5753.edge.naverncp.com/KBO_IMAGE/person/middle/2026/66108.jpg',
+    seasonStats: null
+  });
+});
+
+test('parsePlayerSeasonStats combines hitter season stat tables', () => {
+  const html = `
+    <div class="player_records">
+      <h6>2026 성적</h6>
+      <div class="tbl-type02">
+        <table class="tbl tt">
+          <thead><tr>
+            <th>팀명</th><th><a title="타율">AVG</a></th><th>G</th><th>H</th><th>HR</th><th>RBI</th><th>SB</th>
+          </tr></thead>
+          <tbody><tr><td>LG</td><td>0.188</td><td>26</td><td>16</td><td>0</td><td>7</td><td>2</td></tr></tbody>
+        </table>
+      </div>
+      <div class="tbl-type02">
+        <table class="tbl tt">
+          <thead><tr>
+            <th>BB</th><th>SO</th><th>SLG</th><th>OBP</th><th>OPS</th>
+          </tr></thead>
+          <tbody><tr><td>26</td><td>24</td><td>0.259</td><td>0.397</td><td>0.656</td></tr></tbody>
+        </table>
+      </div>
+      <h6>최근 10경기</h6>
+    </div>
+  `;
+
+  assert.deepEqual(parsePlayerSeasonStats(html, 'hitter'), {
+    year: '2026',
+    type: 'hitter',
+    stats: {
+      '팀명': 'LG',
+      AVG: '0.188',
+      G: '26',
+      H: '16',
+      HR: '0',
+      RBI: '7',
+      SB: '2',
+      BB: '26',
+      SO: '24',
+      SLG: '0.259',
+      OBP: '0.397',
+      OPS: '0.656'
+    }
+  });
+});
+
+test('parsePlayerSeasonStats combines pitcher season stat tables', () => {
+  const html = `
+    <div class="player_records">
+      <h6>2026 성적</h6>
+      <div class="tbl-type02">
+        <table class="tbl tt">
+          <thead><tr>
+            <th>팀명</th><th>ERA</th><th>G</th><th>W</th><th>L</th><th>SV</th><th>HLD</th><th>IP</th>
+          </tr></thead>
+          <tbody><tr><td>KIA</td><td>3.99</td><td>6</td><td>2</td><td>2</td><td>0</td><td>0</td><td>29 1/3</td></tr></tbody>
+        </table>
+      </div>
+      <div class="tbl-type02">
+        <table class="tbl tt">
+          <thead><tr>
+            <th>BB</th><th>SO</th><th>R</th><th>ER</th><th>WHIP</th><th>AVG</th><th>QS</th>
+          </tr></thead>
+          <tbody><tr><td>14</td><td>24</td><td>15</td><td>13</td><td>1.33</td><td>0.221</td><td>1</td></tr></tbody>
+        </table>
+      </div>
+      <h6>최근 10경기</h6>
+    </div>
+  `;
+
+  assert.deepEqual(parsePlayerSeasonStats(html, 'pitcher'), {
+    year: '2026',
+    type: 'pitcher',
+    stats: {
+      '팀명': 'KIA',
+      ERA: '3.99',
+      G: '6',
+      W: '2',
+      L: '2',
+      SV: '0',
+      HLD: '0',
+      IP: '29 1/3',
+      BB: '14',
+      SO: '24',
+      R: '15',
+      ER: '13',
+      WHIP: '1.33',
+      AVG: '0.221',
+      QS: '1'
+    }
   });
 });
