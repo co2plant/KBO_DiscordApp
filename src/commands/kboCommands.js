@@ -70,7 +70,10 @@ function teamDisplayName(teamRow, teamGames, requestedTeam) {
 
 const alertTypeChoices = [
   { name: '경기 시작', value: ALERT_TYPES.GAME_START },
-  { name: '경기 종료', value: ALERT_TYPES.GAME_RESULT }
+  { name: '경기 종료', value: ALERT_TYPES.GAME_RESULT },
+  { name: '득점', value: ALERT_TYPES.SCORE_CHANGE },
+  { name: '역전', value: ALERT_TYPES.LEAD_CHANGE },
+  { name: '경기 취소', value: ALERT_TYPES.GAME_CANCELLED }
 ];
 
 const teamChoices = Object.keys(logoEmoji).map((team) => ({ name: team, value: team }));
@@ -105,9 +108,14 @@ function addAlertOptions(command, includeMinutes = false) {
 
 function formatAlertLine(alert) {
   const label = ALERT_TYPE_LABELS[alert.alertType] ?? alert.alertType;
-  const timing = alert.alertType === ALERT_TYPES.GAME_START
-    ? `(${alert.notifyBeforeMinutes}분 전)`
-    : '(경기 종료 후)';
+  const timingByType = {
+    [ALERT_TYPES.GAME_START]: `(${alert.notifyBeforeMinutes}분 전)`,
+    [ALERT_TYPES.GAME_RESULT]: '(경기 종료 후)',
+    [ALERT_TYPES.SCORE_CHANGE]: '(득점 시)',
+    [ALERT_TYPES.LEAD_CHANGE]: '(역전 시)',
+    [ALERT_TYPES.GAME_CANCELLED]: '(취소 시)'
+  };
+  const timing = timingByType[alert.alertType] ?? '';
   return `${logoEmoji[alert.team] ?? ''} ${alert.team} ${label} ${timing}`.trim();
 }
 

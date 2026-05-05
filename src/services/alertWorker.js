@@ -4,6 +4,10 @@ import {
   ensureScheduleDataForDate
 } from './dataReady.js';
 import { buildDueAlertDeliveries } from './alerts.js';
+import {
+  buildScoreEvents,
+  buildScoreSnapshots
+} from './scoreEvents.js';
 
 export async function runAlertCheck(dependencies, options = {}) {
   const { client, database, crawler } = dependencies;
@@ -13,8 +17,12 @@ export async function runAlertCheck(dependencies, options = {}) {
 
   await ensureScheduleDataForDate(database, crawler, selectedDateKey);
   const games = await refreshLiveScoresForCommand(database, crawler, selectedDateKey, selectedDate, { now });
+  const previousSnapshots = database.selectScoreSnapshots
+    ? await database.selectScoreSnapshots(selectedDateKey)
+    : [];
+  const scoreEvents = buildScoreEvents(previousSnapshots, games, selectedDate);
   const alerts = await database.selectEnabledUserAlerts();
-  const deliveries = buildDueAlertDeliveries(alerts, games, selectedDate, { now });
+  const deliveries = buildDueAlertDeliveries(alerts, games, selectedDate, { now, events: scoreEvents });
 
   let sent = 0;
   let skipped = 0;
@@ -38,6 +46,10 @@ export async function runAlertCheck(dependencies, options = {}) {
       await database.markAlertDeliveryFailed(delivery.deliveryKey, error.message);
       console.log(`[alert:dm] failed type=${delivery.alertType} user=${delivery.discordUserId} game=${delivery.gameId}: ${error.message}`);
     }
+  }
+
+  if (database.upsertScoreSnapshots) {
+    await database.upsertScoreSnapshots(buildScoreSnapshots(games, selectedDate));
   }
 
   return {

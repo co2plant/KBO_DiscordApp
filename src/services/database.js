@@ -120,6 +120,24 @@ export async function ensureSchema() {
       INDEX idx_alert_deliveries_game (game_id, alert_type)
     )
   `);
+  await execute(`
+    CREATE TABLE IF NOT EXISTS ScoreSnapshots (
+      snapshot_key VARCHAR(64) PRIMARY KEY,
+      game_date VARCHAR(10) NOT NULL,
+      game_id VARCHAR(32) NOT NULL,
+      time VARCHAR(16) NOT NULL,
+      away VARCHAR(32) NOT NULL,
+      home VARCHAR(32) NOT NULL,
+      stadium VARCHAR(64) NOT NULL,
+      remarks VARCHAR(64) NOT NULL,
+      away_score INT NOT NULL,
+      home_score INT NOT NULL,
+      leader_team VARCHAR(32) NOT NULL,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_score_snapshots_game_id (game_id),
+      INDEX idx_score_snapshots_game_date (game_date)
+    )
+  `);
   const [indexes] = await execute("SHOW INDEX FROM Standings WHERE Key_name = 'PRIMARY'");
   const primaryColumns = indexes.map((row) => row.Column_name);
   if (primaryColumns.length > 0 && !(primaryColumns.length === 1 && primaryColumns[0] === 'team')) {
@@ -415,6 +433,82 @@ export async function markAlertDeliveryFailed(deliveryKey, errorMessage) {
     `,
     [String(errorMessage ?? '').slice(0, 512), deliveryKey]
   );
+}
+
+function mapScoreSnapshot(row) {
+  return {
+    snapshotKey: row.snapshot_key,
+    gameDate: row.game_date,
+    gameId: row.game_id,
+    time: row.time,
+    away: row.away,
+    home: row.home,
+    stadium: row.stadium,
+    remarks: row.remarks,
+    awayScore: Number(row.away_score),
+    homeScore: Number(row.home_score),
+    leaderTeam: row.leader_team
+  };
+}
+
+export async function selectScoreSnapshots(selectedDateKey) {
+  await ensureSchema();
+  const [rows] = await execute(
+    `
+      SELECT *
+      FROM ScoreSnapshots
+      WHERE game_id LIKE CONCAT(?, '%')
+      ORDER BY game_id
+    `,
+    [String(selectedDateKey)]
+  );
+  return rows.map(mapScoreSnapshot);
+}
+
+export async function upsertScoreSnapshots(snapshots) {
+  await ensureSchema();
+  for (const snapshot of snapshots ?? []) {
+    await execute(
+      `
+        INSERT INTO ScoreSnapshots (
+          snapshot_key,
+          game_date,
+          game_id,
+          time,
+          away,
+          home,
+          stadium,
+          remarks,
+          away_score,
+          home_score,
+          leader_team
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          time = VALUES(time),
+          away = VALUES(away),
+          home = VALUES(home),
+          stadium = VALUES(stadium),
+          remarks = VALUES(remarks),
+          away_score = VALUES(away_score),
+          home_score = VALUES(home_score),
+          leader_team = VALUES(leader_team)
+      `,
+      [
+        snapshot.snapshotKey,
+        snapshot.gameDate,
+        snapshot.gameId,
+        snapshot.time,
+        snapshot.away,
+        snapshot.home,
+        snapshot.stadium,
+        snapshot.remarks,
+        snapshot.awayScore,
+        snapshot.homeScore,
+        snapshot.leaderTeam
+      ]
+    );
+  }
 }
 
 export async function upsertGameAndScore(game) {

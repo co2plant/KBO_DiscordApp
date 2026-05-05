@@ -12,3 +12,11 @@ test('command catalog does not expose score command because schedule covers live
   assert.equal(commandNames.includes('내알림'), true);
   assert.equal(commandNames.includes('스코어'), false);
 });
+
+test('alert command exposes live event alert choices', () => {
+  const source = readFileSync('src/commands/kboCommands.js', 'utf8');
+
+  assert.match(source, /ALERT_TYPES\.SCORE_CHANGE/);
+  assert.match(source, /ALERT_TYPES\.LEAD_CHANGE/);
+  assert.match(source, /ALERT_TYPES\.GAME_CANCELLED/);
+});
