@@ -1,4 +1,5 @@
 import ast
+import io
 import importlib.util
 import sys
 import types
@@ -282,6 +283,52 @@ class TestCrawlerCleanup(unittest.TestCase):
             [['050400', '18:30', 'LG', '3', '2', '한화', '잠실', '종료']],
         )
         self.assertEqual(driver_holder['driver'].quit_calls, 1)
+
+    def test_update_live_scores_uses_mobile_game_state_for_scoreboard_games(self):
+        updates = []
+        module = _load_kbo_crawler_with_schedule_stubs([], [], {})
+        module.database.update_live_game_score = lambda *args: updates.append(args)
+
+        scoreboard_html = """
+        <div class="smsScore">
+            <div class='score_wrap'>
+                <p class='leftTeam'>
+                    <strong class='teamT'>NC</strong>
+                    <em class="score"><span>9</span></em>
+                </p>
+                <strong class="flag"><span>8회말</span></strong>
+                <p class='rightTeam'>
+                    <em class="score"><span>2</span></em>
+                    <strong class='teamT'>LG</strong>
+                </p>
+            </div>
+            <div class="btnSms">
+                <a href='/Schedule/GameCenter/Main.aspx?gameDate=20260503&gameId=20260503NCLG0&section=REVIEW'>리뷰</a>
+            </div>
+            <p class="place">잠실 <span>14:00</span></p>
+        </div>
+        """
+        calls = []
+
+        def request_text(url, data=None, headers=None):
+            calls.append((url, data, headers))
+            if 'ScoreBoard.aspx' in url:
+                return scoreboard_html
+            if 'GetGameState' in url:
+                return (
+                    '{"game":[{"SECTION_ID":3,"INN_NO":9,"TB_NM":"말",'
+                    '"A_SCORE_CN":10,"H_SCORE_CN":3}]}'
+                )
+            raise AssertionError(f'unexpected url: {url}')
+
+        module._request_text = request_text
+
+        with patch('sys.stdout', new=io.StringIO()):
+            refreshed = module.update_live_scores('0503')
+
+        self.assertEqual(refreshed, 1)
+        self.assertEqual(updates, [('0503', '14:00', 'NC', 'LG', 10, 3, '경기종료')])
+        self.assertTrue(any('GetGameState' in url for url, _data, _headers in calls))
 
 
 if __name__ == '__main__':

@@ -113,6 +113,31 @@ class TestDatabaseReadiness(unittest.TestCase):
         self.assertEqual(update_conn.commit_calls, 1)
         self.assertTrue(update_conn.closed)
 
+    def test_update_live_game_score_updates_existing_game_by_match(self):
+        schema_conn = _FakeConnection()
+        update_conn = _FakeConnection()
+        update_conn.cursor_instance.fetchone_result = ('050300',)
+        database = _load_database_module([schema_conn, update_conn])
+
+        database.ensure_schema()
+        database.update_live_game_score('0503', '14:00', 'NC', 'LG', 10, 3, '경기종료')
+
+        executed = update_conn.cursor_instance.executed
+        self.assertEqual(len(executed), 3)
+
+        self.assertIn('SELECT id FROM Games', executed[0][0])
+        self.assertIn('LIKE CONCAT', executed[0][0])
+        self.assertEqual(executed[0][1], ('0503', 'NC', 'LG', '14:00'))
+
+        self.assertIn('UPDATE Games', executed[1][0])
+        self.assertEqual(executed[1][1], ('경기종료', '050300'))
+
+        self.assertIn('INSERT INTO Scores', executed[2][0])
+        self.assertIn('ON DUPLICATE KEY UPDATE', executed[2][0])
+        self.assertEqual(executed[2][1], ('050300', 10, 3))
+        self.assertEqual(update_conn.commit_calls, 1)
+        self.assertTrue(update_conn.closed)
+
     def test_has_standings_data_requires_all_teams(self):
         schema_conn = _FakeConnection()
         count_conn = _FakeConnection()

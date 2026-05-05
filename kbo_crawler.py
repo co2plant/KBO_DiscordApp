@@ -1,7 +1,17 @@
 import database
+from html.parser import HTMLParser
+import json
+from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.request import Request, urlopen
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 import re
+
+_SCOREBOARD_URL = 'https://www.koreabaseball.com/Schedule/ScoreBoard.aspx'
+_MOBILE_LIVE_BASE_URL = 'https://m.koreabaseball.com'
+_DEFAULT_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (compatible; KBO-DiscordBot/1.0)',
+}
 
 
 def _create_driver():
@@ -23,6 +33,241 @@ def _normalize_schedule_date(value):
 
     digits = ''.join(char for char in value if char.isdigit())
     return digits
+
+
+def _attr_dict(attrs):
+    return {name: value or '' for name, value in attrs}
+
+
+def _has_class(attrs, class_name):
+    classes = _attr_dict(attrs).get('class', '').split()
+    return class_name in classes
+
+
+def _parse_score(value):
+    value = str(value).strip()
+    return int(value) if value.isdigit() else -1
+
+
+class _ScoreboardParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.games = []
+        self._current = None
+        self._div_depth = 0
+        self._side = None
+        self._team_capture = None
+        self._score_capture = None
+        self._state_capture = False
+        self._place_capture = False
+        self._place_parts = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == 'div' and _has_class(attrs, 'smsScore') and self._current is None:
+            self._current = {
+                'game_date': '',
+                'game_id': '',
+                'away_team': '',
+                'home_team': '',
+                'away_score': -1,
+                'home_score': -1,
+                'state': '-',
+                'stadium': '',
+                'time': '',
+            }
+            self._div_depth = 1
+            return
+
+        if self._current is None:
+            return
+
+        if tag == 'div':
+            self._div_depth += 1
+
+        if tag == 'p':
+            if _has_class(attrs, 'leftTeam'):
+                self._side = 'away'
+            elif _has_class(attrs, 'rightTeam'):
+                self._side = 'home'
+            elif _has_class(attrs, 'place'):
+                self._place_capture = True
+                self._place_parts = []
+
+        if tag == 'strong':
+            if _has_class(attrs, 'teamT'):
+                self._team_capture = self._side
+            elif _has_class(attrs, 'flag'):
+                self._state_capture = True
+
+        if tag == 'em' and _has_class(attrs, 'score'):
+            self._score_capture = self._side
+
+        if tag == 'a':
+            href = _attr_dict(attrs).get('href', '')
+            if 'GameCenter/Main.aspx' in href:
+                query = parse_qs(urlparse(href).query)
+                self._current['game_date'] = query.get('gameDate', [''])[0]
+                self._current['game_id'] = query.get('gameId', [''])[0]
+
+    def handle_endtag(self, tag):
+        if self._current is None:
+            return
+
+        if tag == 'strong':
+            self._team_capture = None
+            self._state_capture = False
+        elif tag == 'em':
+            self._score_capture = None
+        elif tag == 'p':
+            if self._place_capture:
+                self._finish_place()
+                self._place_capture = False
+            self._side = None
+
+        if tag == 'div':
+            self._div_depth -= 1
+            if self._div_depth == 0:
+                self._finish_game()
+
+    def handle_data(self, data):
+        if self._current is None:
+            return
+
+        text = data.strip()
+        if text == '':
+            return
+
+        if self._team_capture == 'away':
+            self._current['away_team'] += text
+        elif self._team_capture == 'home':
+            self._current['home_team'] += text
+        elif self._score_capture == 'away':
+            self._current['away_score'] = _parse_score(text)
+        elif self._score_capture == 'home':
+            self._current['home_score'] = _parse_score(text)
+        elif self._state_capture:
+            self._current['state'] = text
+        elif self._place_capture:
+            self._place_parts.append(text)
+
+    def _finish_place(self):
+        place = ' '.join(self._place_parts).strip()
+        match = re.match(r'(.+?)\s+(\d{1,2}:\d{2})$', place)
+        if match:
+            self._current['stadium'] = match.group(1).strip()
+            self._current['time'] = match.group(2)
+        else:
+            self._current['stadium'] = place
+
+    def _finish_game(self):
+        if self._current['away_team'] and self._current['home_team']:
+            self.games.append(self._current)
+        self._current = None
+        self._div_depth = 0
+        self._side = None
+        self._team_capture = None
+        self._score_capture = None
+        self._state_capture = False
+        self._place_capture = False
+        self._place_parts = []
+
+
+def _parse_scoreboard_games(scoreboard_html):
+    parser = _ScoreboardParser()
+    parser.feed(scoreboard_html)
+    return parser.games
+
+
+def _request_text(url, data=None, headers=None):
+    request_headers = dict(_DEFAULT_HEADERS)
+    if headers is not None:
+        request_headers.update(headers)
+
+    body = None
+    if data is not None:
+        body = urlencode(data).encode('utf-8')
+        request_headers.setdefault('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8')
+
+    request = Request(url, data=body, headers=request_headers)
+    with urlopen(request, timeout=10) as response:
+        return response.read().decode('utf-8')
+
+
+def _fetch_live_game_state(game_id):
+    text = _request_text(
+        f'{_MOBILE_LIVE_BASE_URL}/ws/Kbo.asmx/GetGameState',
+        data={'le_id': '1', 'sr_id': '0', 'g_id': game_id},
+        headers={
+            'Referer': f'{_MOBILE_LIVE_BASE_URL}/Kbo/Live/Live.aspx?p_le_id=1&p_sr_id=0&p_g_id={game_id}&p_sc_id=0',
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+    )
+    payload = json.loads(text)
+    games = payload.get('game') or []
+    return games[0] if games else None
+
+
+def _live_game_status(live_game, fallback_status):
+    if live_game is None:
+        return fallback_status or '-'
+
+    section_id = str(live_game.get('SECTION_ID', ''))
+    if section_id == '1':
+        return '경기전'
+    if section_id == '3':
+        return '경기종료'
+
+    inning = live_game.get('INN_NO')
+    tb_name = live_game.get('TB_NM')
+    if inning and tb_name:
+        return f'{inning}회{tb_name}'
+
+    return fallback_status or '-'
+
+
+def update_live_scores(selected_date):
+    selected_date = _normalize_schedule_date(selected_date)
+    scoreboard_html = _request_text(_SCOREBOARD_URL)
+    scoreboard_games = [
+        game for game in _parse_scoreboard_games(scoreboard_html)
+        if game['game_date'] == '' or game['game_date'].endswith(selected_date)
+    ]
+
+    print(f'[crawl:live-score] date={selected_date} scoreboard_games={len(scoreboard_games)}')
+
+    updated_count = 0
+    for game in scoreboard_games:
+        live_game = None
+        if game['game_id']:
+            try:
+                live_game = _fetch_live_game_state(game['game_id'])
+            except Exception as exc:
+                print(f"[crawl:live-score] failed live state for {game['game_id']}: {exc}")
+
+        away_score = game['away_score']
+        home_score = game['home_score']
+        if live_game is not None:
+            away_score = _parse_score(live_game.get('A_SCORE_CN', away_score))
+            home_score = _parse_score(live_game.get('H_SCORE_CN', home_score))
+
+        status = _live_game_status(live_game, game['state'])
+        database.update_live_game_score(
+            selected_date,
+            game['time'],
+            game['away_team'],
+            game['home_team'],
+            away_score,
+            home_score,
+            status,
+        )
+        updated_count += 1
+        print(
+            f"[crawl:live-score] {game['time']} {game['away_team']} "
+            f"{away_score}-{home_score} {game['home_team']} {status}"
+        )
+
+    return updated_count
+
 
 def insert_standings():
     driver = None

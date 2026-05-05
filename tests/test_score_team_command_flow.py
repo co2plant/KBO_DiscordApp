@@ -1,4 +1,5 @@
 import asyncio
+import io
 import importlib.util
 import sys
 import types
@@ -169,6 +170,7 @@ class _FakeCrawler(types.ModuleType):
     def __init__(self):
         super().__init__('kbo_crawler')
         self.schedule_refreshes = []
+        self.live_score_refreshes = []
         self.standings_refreshes = 0
 
     def insert_standings(self):
@@ -183,6 +185,9 @@ class _FakeCrawler(types.ModuleType):
 
     def update_schedule_once(self, selected_date):
         self.schedule_refreshes.append(selected_date)
+
+    def update_live_scores(self, selected_date):
+        self.live_score_refreshes.append(selected_date)
 
 
 def _fake_discord_modules():
@@ -270,7 +275,8 @@ class TestScoreTeamCommandFlow(unittest.TestCase):
         module = _load_kbo_module(database, crawler)
         interaction = _FakeInteraction()
 
-        asyncio.run(module.scores(interaction))
+        with patch('sys.stdout', new=io.StringIO()):
+            asyncio.run(module.scores(interaction))
 
         self.assertEqual(interaction.response.defer_calls, [{'thinking': True}])
         self.assertEqual(crawler.schedule_refreshes, [])
@@ -290,11 +296,28 @@ class TestScoreTeamCommandFlow(unittest.TestCase):
         module = _load_kbo_module(database, crawler)
         interaction = _FakeInteraction()
 
-        asyncio.run(module.scores(interaction))
+        with patch('sys.stdout', new=io.StringIO()):
+            asyncio.run(module.scores(interaction))
 
         self.assertEqual(crawler.schedule_refreshes, ['0505'])
         self.assertEqual(len(interaction.followup.sent), 1)
         self.assertEqual(interaction.followup.sent[0]['content'], '오늘 경기 스코어를 찾을 수 없습니다.')
+
+    def test_scores_refreshes_live_scores_during_game_window(self):
+        database = _FakeDatabase()
+        database.game_rows = [
+            ('050500', '00:00', 'NC', 'LG', '잠실', '-', '050500', 0, 0),
+        ]
+        crawler = _FakeCrawler()
+        module = _load_kbo_module(database, crawler)
+        interaction = _FakeInteraction()
+
+        with patch('sys.stdout', new=io.StringIO()):
+            asyncio.run(module.scores(interaction))
+
+        self.assertEqual(crawler.schedule_refreshes, [])
+        self.assertEqual(crawler.live_score_refreshes, ['0505'])
+        self.assertEqual(len(interaction.followup.sent), 1)
 
     def test_team_summary_uses_cached_today_game_and_refreshes_standings(self):
         database = _FakeDatabase()

@@ -66,6 +66,8 @@ intents = discord.Intents.default()
 client = MyClient(intents=intents)
 _data_ready = False
 _data_ready_lock = asyncio.Lock()
+_LIVE_SCORE_REFRESH_LEAD_MINUTES = 10
+_FINAL_GAME_REMARKS = ('경기종료', '종료', '취소')
 
 
 def _should_hide_schedule_score(selected_date: datetime, game_time: str, remarks: str, away_score: int, home_score: int) -> bool:
@@ -188,6 +190,57 @@ async def _ensure_schedule_data_for_date(selected_date_key: str):
         await asyncio.to_thread(kbo_crawler.update_schedule_once, selected_date_key)
     except Exception as exc:
         print(f'Failed to refresh schedule for {selected_date_key}: {exc}')
+
+
+def _is_final_game_status(remarks: str) -> bool:
+    remarks = str(remarks or '')
+    return any(final_status in remarks for final_status in _FINAL_GAME_REMARKS)
+
+
+def _should_refresh_live_scores(selected_date: datetime, game_rows, now: Optional[datetime] = None) -> bool:
+    if not game_rows:
+        return False
+
+    now = datetime.now(KST) if now is None else now
+    if selected_date.date() != now.date():
+        return False
+
+    for row in game_rows:
+        game_time = row[1]
+        remarks = row[5]
+        if _is_final_game_status(remarks):
+            continue
+
+        try:
+            scheduled_time = datetime.strptime(game_time, '%H:%M').time()
+        except ValueError:
+            continue
+
+        scheduled_datetime = selected_date.replace(
+            hour=scheduled_time.hour,
+            minute=scheduled_time.minute,
+            second=0,
+            microsecond=0,
+        )
+        if now >= scheduled_datetime - timedelta(minutes=_LIVE_SCORE_REFRESH_LEAD_MINUTES):
+            return True
+
+    return False
+
+
+async def _refresh_live_scores_for_command(selected_date_key: str, selected_date: datetime):
+    game_rows = await asyncio.to_thread(database.select_game_and_scord, selected_date_key)
+    if not _should_refresh_live_scores(selected_date, game_rows):
+        return game_rows
+
+    try:
+        refreshed_count = await asyncio.to_thread(kbo_crawler.update_live_scores, selected_date_key)
+        print(f'Refreshed live scores for {selected_date_key}: {refreshed_count}')
+    except Exception as exc:
+        print(f'Failed to refresh live scores for {selected_date_key}: {exc}')
+        return game_rows
+
+    return await asyncio.to_thread(database.select_game_and_scord, selected_date_key)
 
 
 def _normalize_team_name(team_name: str) -> str:
@@ -355,7 +408,7 @@ async def scores(interaction: discord.Interaction):
 
     await _ensure_schedule_data_for_date(selected_date_key)
 
-    from_db_result = database.select_game_and_scord(selected_date_key)
+    from_db_result = await _refresh_live_scores_for_command(selected_date_key, selected_date)
     if from_db_result is None or len(from_db_result) == 0:
         await interaction.followup.send('오늘 경기 스코어를 찾을 수 없습니다.')
         return
@@ -385,12 +438,12 @@ async def team_summary(interaction: discord.Interaction, team: str):
     selected_date_key = selected_date.strftime('%m%d')
 
     await _ensure_schedule_data_for_date(selected_date_key)
+    game_rows = await _refresh_live_scores_for_command(selected_date_key, selected_date)
     await _refresh_standings_for_command()
 
     standings_rows = database.select_standings()
     team_row = _find_standings_team(standings_rows, team) if standings_rows is not None else None
 
-    game_rows = database.select_game_and_scord(selected_date_key)
     team_games = _find_team_games(game_rows or [], team)
 
     if team_row is None and not team_games:

@@ -58,6 +58,7 @@ class TestScoreTeamCommands(unittest.TestCase):
 
         self.assertEqual(_command_name(scores), '스코어')
         self.assertTrue(_awaits_helper(scores, '_ensure_schedule_data_for_date'))
+        self.assertTrue(_awaits_helper(scores, '_refresh_live_scores_for_command'))
 
     def test_team_summary_command_exists(self):
         tree = _read_ast('kbo.py')
@@ -65,6 +66,7 @@ class TestScoreTeamCommands(unittest.TestCase):
 
         self.assertEqual(_command_name(team_summary), '팀')
         self.assertTrue(_awaits_helper(team_summary, '_ensure_schedule_data_for_date'))
+        self.assertTrue(_awaits_helper(team_summary, '_refresh_live_scores_for_command'))
         self.assertTrue(_awaits_helper(team_summary, '_refresh_standings_for_command'))
 
     def test_format_score_line_hides_sentinel_scores_before_game(self):

@@ -271,6 +271,55 @@ def update_game_and_score(game_info):
     cursor.close()
     conn.close()
 
+
+def update_live_game_score(selected_date, game_time, away, home, away_score, home_score, remarks):
+    conn = _connect()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            SELECT id FROM Games
+            WHERE id LIKE CONCAT(%s, '%%')
+              AND away = %s
+              AND home = %s
+              AND time = %s
+            LIMIT 1
+            """,
+            (str(selected_date), away, home, game_time),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            print(f"Live score target not found: {(selected_date, game_time, away, home)}")
+            return
+
+        game_id = row[0]
+        cursor.execute(
+            """
+            UPDATE Games
+            SET remarks = %s
+            WHERE id = %s
+            """,
+            (remarks, game_id),
+        )
+        cursor.execute(
+            """
+            INSERT INTO Scores (id, away_score, home_score)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                away_score = VALUES(away_score),
+                home_score = VALUES(home_score)
+            """,
+            (game_id, away_score, home_score),
+        )
+        conn.commit()
+    except Exception as exc:
+        print(f"Error updating live score: {(selected_date, game_time, away, home, away_score, home_score, remarks)} ({exc})")
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def select_game_and_scord(selected_date):
     conn = _connect()
     cursor = conn.cursor()
