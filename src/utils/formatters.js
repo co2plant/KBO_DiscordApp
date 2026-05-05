@@ -1,4 +1,4 @@
-import { logoEmoji } from '../constants.js';
+import { logoEmoji, rankEmoji } from '../constants.js';
 
 const FINAL_GAME_REMARKS = ['경기종료', '종료', '취소'];
 const LIVE_SCORE_REFRESH_LEAD_MINUTES = 10;
@@ -32,7 +32,8 @@ export function buildStandingsFields(standings) {
   standings.forEach((team, index) => {
     const hotStreak = isHotStreak(team.streak) ? ' 🔥' : '';
     const teamLogo = logoEmoji[team.team] ?? '';
-    rankedTeams.push(`${index + 1} ${teamLogo} ${team.team}${hotStreak}`.trim());
+    const rankLabel = rankEmoji[index + 1] ?? String(index + 1);
+    rankedTeams.push(`${rankLabel} ${teamLogo} ${team.team}${hotStreak}`.trim());
     records.push(`${team.win}승 ${team.lose}패 ${team.draw}무`);
     rates.push(String(team.rate));
   });
