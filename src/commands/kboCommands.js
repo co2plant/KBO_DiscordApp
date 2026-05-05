@@ -26,6 +26,7 @@ import {
   normalizeTeamName
 } from '../utils/formatters.js';
 import { resolvePlayerLookup } from '../services/playerLookup.js';
+import { buildGameSummary } from '../services/gameSummary.js';
 import {
   ALERT_TYPES,
   ALERT_TYPE_LABELS,
@@ -358,6 +359,52 @@ export function createCommands(dependencies) {
             : '설정된 알림이 없습니다.',
           ephemeral: true
         });
+      }
+    },
+    {
+      data: new SlashCommandBuilder()
+        .setName('경기요약')
+        .setDescription('선택한 팀의 오늘 경기 흐름을 요약합니다.')
+        .addStringOption((option) => (
+          option.setName('team')
+            .setDescription('요약을 확인할 팀 이름을 입력하세요.')
+            .setRequired(true)
+        )),
+      async execute(interaction) {
+        await interaction.deferReply();
+        await ensureDataReady(database, crawler);
+
+        const requestedTeam = interaction.options.getString('team', true);
+        const selectedDate = nowKst();
+        const selectedDateKey = toMmdd(selectedDate);
+
+        await ensureScheduleDataForDate(database, crawler, selectedDateKey);
+        const gameRows = await refreshLiveScoresForCommand(database, crawler, selectedDateKey, selectedDate);
+        const teamGames = findTeamGames(gameRows ?? [], requestedTeam);
+
+        if (teamGames.length === 0) {
+          await interaction.editReply(`${requestedTeam} 오늘 경기 정보를 찾을 수 없습니다.`);
+          return;
+        }
+
+        const teamName = teamDisplayName(null, teamGames, requestedTeam);
+        const embed = createdFooter(
+          new EmbedBuilder()
+            .setTitle(`${logoEmoji[teamName] ?? ''} ${teamName} 경기 요약`)
+            .setURL(`https://m.sports.naver.com/kbaseball/schedule/index?date=${toYmd(selectedDate)}`)
+            .setColor(0x00AEEF)
+        );
+
+        for (const game of teamGames) {
+          const summary = buildGameSummary(game, teamName, selectedDate);
+          embed.addFields({
+            name: summary.context,
+            value: `${summary.scoreLine}\n${summary.summary}`,
+            inline: false
+          });
+        }
+
+        await interaction.editReply({ embeds: [embed] });
       }
     },
     {

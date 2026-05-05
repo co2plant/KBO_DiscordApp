@@ -7,6 +7,7 @@ test('command catalog does not expose score command because schedule covers live
   const commandNames = [...source.matchAll(/\.setName\('([^']+)'\)/g)].map((match) => match[1]);
 
   assert.equal(commandNames.includes('일정'), true);
+  assert.equal(commandNames.includes('경기요약'), true);
   assert.equal(commandNames.includes('알림설정'), true);
   assert.equal(commandNames.includes('알림해제'), true);
   assert.equal(commandNames.includes('내알림'), true);
