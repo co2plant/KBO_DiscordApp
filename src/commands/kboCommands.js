@@ -25,6 +25,11 @@ import {
   formatScoreLine,
   normalizeTeamName
 } from '../utils/formatters.js';
+import { resolvePlayerLookup } from '../services/playerLookup.js';
+import {
+  buildPlayerCandidateResponse,
+  buildPlayerEmbed
+} from '../utils/playerViews.js';
 
 function createdFooter(embed) {
   return embed.setFooter({ text: 'Created' }).setTimestamp(new Date());
@@ -222,6 +227,41 @@ export function createCommands(dependencies) {
         );
 
         await interaction.editReply({ embeds: [embed] });
+      }
+    },
+    {
+      data: new SlashCommandBuilder()
+        .setName('선수')
+        .setDescription('선수 이름으로 KBO 기본 정보를 조회합니다.')
+        .addStringOption((option) => (
+          option.setName('name')
+            .setDescription('조회할 선수 이름을 입력하세요.')
+            .setRequired(true)
+        ))
+        .addStringOption((option) => (
+          option.setName('team')
+            .setDescription('동명이인이 있을 때 좁힐 팀 이름을 입력하세요.')
+            .setRequired(false)
+        )),
+      async execute(interaction) {
+        await interaction.deferReply();
+        await database.ensureSchema();
+
+        const name = interaction.options.getString('name', true);
+        const team = interaction.options.getString('team') ?? '';
+        const result = await resolvePlayerLookup({ name, team }, database, crawler);
+
+        if (result.type === 'not_found') {
+          await interaction.editReply(`${name} 선수 정보를 찾을 수 없습니다.`);
+          return;
+        }
+
+        if (result.type === 'candidates') {
+          await interaction.editReply(buildPlayerCandidateResponse(result.candidates, interaction.user.id));
+          return;
+        }
+
+        await interaction.editReply({ embeds: [buildPlayerEmbed(result.player)], components: [] });
       }
     },
     {

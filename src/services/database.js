@@ -70,6 +70,28 @@ export async function ensureSchema() {
       CONSTRAINT fk_scores_game FOREIGN KEY (id) REFERENCES Games(id) ON DELETE CASCADE
     )
   `);
+  await execute(`
+    CREATE TABLE IF NOT EXISTS Players (
+      player_id VARCHAR(16) PRIMARY KEY,
+      name VARCHAR(32) NOT NULL,
+      team VARCHAR(32) NOT NULL,
+      team_name VARCHAR(64) NOT NULL,
+      back_no VARCHAR(16) NOT NULL,
+      position VARCHAR(64) NOT NULL,
+      birthday VARCHAR(32) NOT NULL,
+      height_weight VARCHAR(64) NOT NULL,
+      career TEXT NOT NULL,
+      payment VARCHAR(64) NOT NULL,
+      salary VARCHAR(64) NOT NULL,
+      draft VARCHAR(128) NOT NULL,
+      join_info VARCHAR(64) NOT NULL,
+      profile_image_url VARCHAR(512) NOT NULL,
+      detail_url VARCHAR(512) NOT NULL,
+      detail_type VARCHAR(16) NOT NULL,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_players_name_team (name, team)
+    )
+  `);
   const [indexes] = await execute("SHOW INDEX FROM Standings WHERE Key_name = 'PRIMARY'");
   const primaryColumns = indexes.map((row) => row.Column_name);
   if (primaryColumns.length > 0 && !(primaryColumns.length === 1 && primaryColumns[0] === 'team')) {
@@ -130,6 +152,112 @@ export async function selectStandings() {
     home: row.home,
     away: row.away
   }));
+}
+
+function mapPlayer(row) {
+  return {
+    playerId: row.player_id,
+    name: row.name,
+    team: row.team,
+    teamName: row.team_name,
+    backNo: row.back_no,
+    position: row.position,
+    birthday: row.birthday,
+    heightWeight: row.height_weight,
+    career: row.career,
+    payment: row.payment,
+    salary: row.salary,
+    draft: row.draft,
+    joinInfo: row.join_info,
+    profileImageUrl: row.profile_image_url,
+    detailUrl: row.detail_url,
+    detailType: row.detail_type
+  };
+}
+
+export async function selectPlayerById(playerId) {
+  await ensureSchema();
+  const [rows] = await execute('SELECT * FROM Players WHERE player_id = ? LIMIT 1', [String(playerId)]);
+  return rows[0] ? mapPlayer(rows[0]) : null;
+}
+
+export async function selectPlayersByName(name) {
+  await ensureSchema();
+  const [rows] = await execute(
+    'SELECT * FROM Players WHERE name = ? ORDER BY team, CAST(back_no AS UNSIGNED), player_id',
+    [String(name)]
+  );
+  return rows.map(mapPlayer);
+}
+
+export async function selectPlayerByNameAndTeam(name, team) {
+  await ensureSchema();
+  const [rows] = await execute(
+    'SELECT * FROM Players WHERE name = ? AND UPPER(team) = UPPER(?) ORDER BY player_id LIMIT 1',
+    [String(name), String(team)]
+  );
+  return rows[0] ? mapPlayer(rows[0]) : null;
+}
+
+export async function upsertPlayer(player) {
+  await ensureSchema();
+  await execute(
+    `
+      INSERT INTO Players (
+        player_id,
+        name,
+        team,
+        team_name,
+        back_no,
+        position,
+        birthday,
+        height_weight,
+        career,
+        payment,
+        salary,
+        draft,
+        join_info,
+        profile_image_url,
+        detail_url,
+        detail_type
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        name = VALUES(name),
+        team = VALUES(team),
+        team_name = VALUES(team_name),
+        back_no = VALUES(back_no),
+        position = VALUES(position),
+        birthday = VALUES(birthday),
+        height_weight = VALUES(height_weight),
+        career = VALUES(career),
+        payment = VALUES(payment),
+        salary = VALUES(salary),
+        draft = VALUES(draft),
+        join_info = VALUES(join_info),
+        profile_image_url = VALUES(profile_image_url),
+        detail_url = VALUES(detail_url),
+        detail_type = VALUES(detail_type)
+    `,
+    [
+      player.playerId,
+      player.name,
+      player.team,
+      player.teamName,
+      player.backNo,
+      player.position,
+      player.birthday,
+      player.heightWeight,
+      player.career,
+      player.payment,
+      player.salary,
+      player.draft,
+      player.joinInfo,
+      player.profileImageUrl,
+      player.detailUrl,
+      player.detailType
+    ]
+  );
 }
 
 export async function upsertGameAndScore(game) {

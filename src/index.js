@@ -13,6 +13,10 @@ import { createCommands } from './commands/kboCommands.js';
 import * as crawler from './services/kboCrawler.js';
 import * as database from './services/database.js';
 import { ensureDataReady } from './services/dataReady.js';
+import {
+  handlePlayerComponent,
+  isPlayerComponent
+} from './interactions/playerInteractions.js';
 
 assertConfig();
 
@@ -67,19 +71,22 @@ client.once(Events.ClientReady, async (readyClient) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
-  if (!interaction.isChatInputCommand()) {
-    return;
-  }
-
-  const command = commandMap.get(interaction.commandName);
-  if (!command) {
-    return;
-  }
-
   try {
-    await command.execute(interaction);
+    if (interaction.isChatInputCommand()) {
+      const command = commandMap.get(interaction.commandName);
+      if (!command) {
+        return;
+      }
+
+      await command.execute(interaction);
+      return;
+    }
+
+    if (isPlayerComponent(interaction)) {
+      await handlePlayerComponent(interaction, { database, crawler });
+    }
   } catch (error) {
-    console.error(`Command failed: ${interaction.commandName}`, error);
+    console.error(`Interaction failed: ${interaction.commandName ?? interaction.customId}`, error);
     const message = '명령 처리 중 오류가 발생했습니다.';
     if (interaction.deferred || interaction.replied) {
       await interaction.editReply(message);

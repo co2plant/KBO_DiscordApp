@@ -1,6 +1,10 @@
 import { config } from '../config.js';
 import { nowKst, toMmdd } from '../constants.js';
 import { parseScoreValue, updateLiveScores as updateLiveScoresFromKbo } from './liveScore.js';
+import {
+  fetchPlayerDetail as fetchKboPlayerDetail,
+  searchPlayers as searchKboPlayers
+} from './playerCrawler.js';
 
 const STANDINGS_URL = 'https://www.koreabaseball.com/Record/TeamRank/TeamRankDaily.aspx';
 const SCHEDULE_URL = 'https://www.koreabaseball.com/Schedule/Schedule.aspx';
@@ -158,4 +162,12 @@ export async function updateTodaySchedule(database) {
 
 export async function updateLiveScores(selectedDate, database) {
   return updateLiveScoresFromKbo(normalizeScheduleDate(selectedDate), database);
+}
+
+export async function searchPlayers(keyword) {
+  return searchKboPlayers(keyword);
+}
+
+export async function fetchPlayerDetail(candidate) {
+  return fetchKboPlayerDetail(candidate);
 }
