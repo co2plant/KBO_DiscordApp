@@ -1,0 +1,36 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+
+test('command catalog does not expose score command because schedule covers live scores', () => {
+  const source = readFileSync('src/commands/kboCommands.js', 'utf8');
+  const commandNames = [...source.matchAll(/\.setName\('([^']+)'\)/g)].map((match) => match[1]);
+
+  assert.equal(commandNames.includes('일정'), true);
+  assert.equal(commandNames.includes('도움말'), true);
+  assert.equal(commandNames.includes('내팀설정'), true);
+  assert.equal(commandNames.includes('내팀해제'), true);
+  assert.equal(commandNames.includes('내팀'), true);
+  assert.equal(commandNames.includes('경기요약'), true);
+  assert.equal(commandNames.includes('알림설정'), true);
+  assert.equal(commandNames.includes('알림해제'), true);
+  assert.equal(commandNames.includes('내알림'), true);
+  assert.equal(commandNames.includes('스코어'), false);
+});
+
+test('alert command exposes live event alert choices', () => {
+  const source = readFileSync('src/commands/kboCommands.js', 'utf8');
+
+  assert.match(source, /ALERT_TYPES\.SCORE_CHANGE/);
+  assert.match(source, /ALERT_TYPES\.LEAD_CHANGE/);
+  assert.match(source, /ALERT_TYPES\.GAME_CANCELLED/);
+});
+
+test('team options use autocomplete for team based commands including standings detail', () => {
+  const source = readFileSync('src/commands/kboCommands.js', 'utf8');
+  const indexSource = readFileSync('src/index.js', 'utf8');
+
+  assert.match(source, /addTeamOption/);
+  assert.match(source, /setAutocomplete\(true\)/);
+  assert.match(indexSource, /handleAutocomplete/);
+});

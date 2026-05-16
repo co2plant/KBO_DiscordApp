@@ -1,39 +1,46 @@
-require('dotenv').config();
+import fs from 'node:fs';
+
+function loadConfigFile() {
+  if (!fs.existsSync('config.json')) {
+    return {};
+  }
+
+  return JSON.parse(fs.readFileSync('config.json', 'utf8'));
+}
 
 function coalesce(...values) {
-  for (const value of values) {
-    if (value !== undefined && value !== null && value !== '') {
-      return value;
-    }
-  }
-  return undefined;
+  return values.find((value) => value !== undefined && value !== null && value !== '');
 }
 
-function requireSetting(name, value) {
-  if (value === undefined || value === null || value === '') {
-    throw new Error(`Missing setting: ${name}`);
-  }
-  return value;
-}
+const fileConfig = loadConfigFile();
+const discord = fileConfig.DISCORD ?? {};
+const maria = fileConfig.MARIA ?? {};
 
-function readInteger(name, value, defaultValue = 0) {
-  const rawValue = coalesce(value, String(defaultValue));
-  const parsedValue = Number.parseInt(rawValue, 10);
-  if (Number.isNaN(parsedValue)) {
-    throw new Error(`Invalid integer setting: ${name}`);
-  }
-  return parsedValue;
-}
-
-const config = {
-  discordToken: requireSetting('DISCORD_TOKEN', process.env.DISCORD_TOKEN),
-  discordClientId: requireSetting('DISCORD_CLIENT_ID', process.env.DISCORD_CLIENT_ID),
-  discordChannelId: readInteger('DISCORD_CHANNEL_ID', process.env.DISCORD_CHANNEL_ID),
-  discordGuildId: requireSetting('DISCORD_GUILD_ID', process.env.DISCORD_GUILD_ID),
-  dbHost: coalesce(process.env.DB_HOST, process.env.MARIA_HOST, '127.0.0.1'),
-  dbUser: requireSetting('DB_USER', coalesce(process.env.DB_USER, process.env.MARIA_USER)),
-  dbPassword: requireSetting('DB_PASSWORD', coalesce(process.env.DB_PASSWORD, process.env.MARIA_PASSWORD)),
-  dbName: requireSetting('DB_NAME', coalesce(process.env.DB_NAME, process.env.MARIA_DB)),
+export const config = {
+  discordToken: coalesce(process.env.DISCORD_TOKEN, discord.TOKEN),
+  discordChannelId: coalesce(process.env.DISCORD_CHANNEL_ID, discord.CHANNEL_ID),
+  discordGuildId: coalesce(process.env.DISCORD_GUILD_ID, discord.GUILD_ID),
+  db: {
+    host: coalesce(process.env.DB_HOST, process.env.MARIA_HOST, maria.HOST, '127.0.0.1'),
+    user: coalesce(process.env.DB_USER, process.env.MARIA_USER, maria.USER),
+    password: coalesce(process.env.DB_PASSWORD, process.env.MARIA_PASSWORD, maria.PASSWORD),
+    database: coalesce(process.env.DB_NAME, process.env.MARIA_DB, maria.DB)
+  },
+  chromiumPath: coalesce(process.env.PUPPETEER_EXECUTABLE_PATH, process.env.CHROME_BIN, '/usr/bin/chromium')
 };
 
-module.exports = { config, coalesce, readInteger, requireSetting };
+export function assertConfig() {
+  if (!config.discordToken) {
+    throw new Error('Missing Discord token. Set DISCORD_TOKEN env or provide config.json');
+  }
+
+  if (!config.discordGuildId) {
+    throw new Error('Missing Discord guild id. Set DISCORD_GUILD_ID env or provide config.json');
+  }
+
+  for (const [name, value] of Object.entries(config.db)) {
+    if (!value) {
+      throw new Error(`Missing DB setting: ${name}`);
+    }
+  }
+}

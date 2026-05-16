@@ -1,18 +1,20 @@
 {
-  "name": "kbo-discordapp",
-  "version": "1.0.0",
-  "description": "KBO Discord bot rewritten with discord.js",
-  "main": "index.js",
+  "name": "kbo-discord-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
   "scripts": {
-    "start": "node index.js",
-    "deploy:commands": "node deploy-commands.js",
-    "check": "node --check index.js && node --check deploy-commands.js && node --test"
+    "start": "node src/index.js",
+    "test": "node --test --test-isolation=none",
+    "check": "node --check src/index.js"
   },
   "dependencies": {
-    "discord.js": "^14.26.2",
-    "dotenv": "^16.6.1",
-    "mysql2": "^3.15.3",
-    "selenium-webdriver": "^4.37.0"
+    "discord.js": "^14.16.3",
+    "mysql2": "^3.11.3",
+    "puppeteer-core": "^23.6.0"
   },
-  "devDependencies": {}
+  "engines": {
+    "node": ">=22"
+  }
 }

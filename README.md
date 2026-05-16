@@ -1,62 +1,64 @@
 # KBO_DiscordApp
 
-KBO 경기 정보 Discord 봇입니다. 현재 런타임은 `discord.js` 기반 JavaScript입니다.
+KBO 정보를 제공하는 Discord 봇입니다. 현재 런타임은 **Node.js + discord.js** 입니다.
 
-## 문서
-- [플랜 우선 작업 흐름](PLAN_FIRST_WORKFLOW.md)
+## 주요 명령어
 
-## JavaScript 개발 명령
+- `/순위`: KBO 팀 순위
+- `/성적`: 선택한 팀의 상세 성적
+- `/일정`: 오늘/내일/모레 경기 일정
+- `/스코어`: 오늘 경기 스코어, 경기 중에는 KBO live score 재크롤링
+- `/팀`: 선택한 팀의 오늘 경기와 성적 요약
 
-### 의존성 설치
-```bash
-npm install
+## 환경변수
+
+`.env.example`을 복사해 `.env`를 만들고 값을 채우세요.
+
+```powershell
+Copy-Item .env.example .env
 ```
 
-### 기본 검증
-```bash
-npm run check
+필수 값:
+
+```env
+DISCORD_TOKEN=YOUR_DISCORD_BOT_TOKEN
+DISCORD_CHANNEL_ID=123456789012345678
+DISCORD_GUILD_ID=123456789012345678
+
+DB_HOST=mariadb
+DB_USER=app_user
+DB_PASSWORD=app_password
+DB_NAME=kbo
+DB_ROOT_PASSWORD=rootpass
 ```
 
-### Slash command 등록
-```bash
-npm run deploy:commands
-```
+## Docker 실행
 
-`deploy:commands`에는 유효한 `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID`가 필요합니다.
-
-## 실제 실행 조건
-- 유효한 Discord bot token/client/guild 설정
-- MariaDB 접속 정보와 접근 가능한 DB
-- Chromium/ChromeDriver 및 Selenium 실행 환경
-- Discord API, KBO 사이트에 접근 가능한 네트워크
-
-### 로컬 실행
-```bash
-node index.js
-```
-
-## Docker로 실행
-
-### 1) 환경변수 파일 준비
-```bash
-cp .env.example .env
-```
-
-`.env`에 Discord/DB 값을 채우면 됩니다. 주요 키는 `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID`, `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_ROOT_PASSWORD`입니다.
-
-### 2) 컨테이너 실행
-```bash
+```powershell
 docker compose up -d --build
 ```
 
-`docker-compose.yml`에 MariaDB 서비스가 포함되어 있어 기본값 기준으로 DB도 함께 올라옵니다.
+상태와 로그 확인:
 
-### 상태 확인
-```bash
+```powershell
 docker compose ps
 docker compose logs -f bot
 ```
 
-## 테스트
+스코어 갱신이 실행되면 로그에 다음 형태가 출력됩니다.
 
-JavaScript 테스트는 `test/*.js`에 있으며 `npm run check`로 문법 검사와 함께 실행합니다.
+```text
+[crawl:live-score] date=0505 scoreboard_games=5
+[crawl:live-score] 14:00 두산 0-0 LG 경기전
+```
+
+## 로컬 테스트
+
+외부 패키지 설치 없이 파서/formatter 테스트는 번들 Node로 실행할 수 있습니다.
+
+```powershell
+node --test --test-isolation=none
+node --check src/index.js
+```
+
+실제 봇 실행에는 `discord.js`, `mysql2`, `puppeteer-core` 설치가 필요합니다. Docker 실행을 권장합니다.

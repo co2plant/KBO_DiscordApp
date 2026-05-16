@@ -1,11 +1,11 @@
-FROM node:20-slim
+FROM node:22-slim
 
-ENV NODE_ENV=production
+ENV NODE_ENV=production \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         chromium \
-        chromium-driver \
         fonts-nanum \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -13,8 +13,9 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY package*.json /app/
-RUN npm ci --omit=dev
+
+RUN npm install --omit=dev
 
 COPY . /app
 
-CMD ["node", "index.js"]
+CMD ["npm", "start"]
