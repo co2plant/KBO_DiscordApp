@@ -1,5 +1,7 @@
 # Discord.js Migration Implementation Plan
 
+> 참고용 완료 계획입니다. 현재 런타임은 Node.js + discord.js이며, 현재 기준 문서는 `docs/ROADMAP.md`입니다.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Convert the KBO Discord bot runtime from Python `discord.py` to Node.js `discord.js` while preserving schedule, standings, score, team summary, and live score crawling behavior.
