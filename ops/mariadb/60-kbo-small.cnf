@@ -1,0 +1,8 @@
+[mysqld]
+# Small-server baseline for a 1 vCPU / 1GB RAM host running MariaDB and the bot.
+innodb_buffer_pool_size=128M
+max_connections=20
+performance_schema=OFF
+table_open_cache=200
+tmp_table_size=16M
+max_heap_table_size=16M
