@@ -462,7 +462,7 @@ Remove the Docker execution section entirely. Add:
 Keep the local test section:
 
 ```powershell
-node --test --test-isolation=none
+node --test
 node --check src/index.js
 ```
 

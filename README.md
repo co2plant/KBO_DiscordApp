@@ -59,7 +59,7 @@ npm start
 외부 패키지 설치 없이 파서/formatter 테스트는 번들 Node로 실행할 수 있습니다.
 
 ```powershell
-node --test --test-isolation=none
+node --test
 node --check src/index.js
 ```
 
