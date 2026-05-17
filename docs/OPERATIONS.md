@@ -80,7 +80,7 @@ cd KBO_DiscordApp
 npm install --omit=dev
 ```
 
-`package-lock.json`이 저장소에 추가된 뒤에는 CI는 `npm ci`를 사용하고, 운영 서버는 의존성 파일이 바뀐 배포에서만 `npm install --omit=dev`를 실행합니다.
+CI는 `npm ci`를 사용하고, 운영 서버는 의존성 파일이 바뀐 배포에서만 `npm install --omit=dev`를 실행합니다.
 
 ## 환경 변수
 
@@ -91,10 +91,10 @@ cp .env.example .env
 chmod 600 .env
 ```
 
-운영 서버에서는 보통 DB host를 localhost로 둡니다.
+운영 서버에서는 DB host를 MariaDB 계정 host와 같은 `localhost`로 둡니다.
 
 ```env
-DB_HOST=127.0.0.1
+DB_HOST=localhost
 PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 ```
 
@@ -128,7 +128,8 @@ sudo systemctl restart kbo-discord-bot
 서버 부하를 줄이기 위해 테스트와 build는 서버에서 실행하지 않습니다.
 
 ```bash
-DEPLOY_PATH=/home/ubuntu/workspace/KBO_DiscordApp ops/deploy-restart-only.sh
+cd /home/ubuntu/workspace/KBO_DiscordApp
+DEPLOY_PATH=/home/ubuntu/workspace/KBO_DiscordApp ./ops/deploy-restart-only.sh
 ```
 
 스크립트는 다음 작업만 수행합니다.
@@ -137,6 +138,38 @@ DEPLOY_PATH=/home/ubuntu/workspace/KBO_DiscordApp ops/deploy-restart-only.sh
 - `git reset --hard origin/main`
 - `package.json` 또는 `package-lock.json` 변경 시에만 `npm install --omit=dev`
 - `systemctl restart kbo-discord-bot`
+
+`git reset --hard`는 서버 작업 디렉터리의 로컬 변경을 삭제합니다. 운영 서버에서는 `.env`처럼 Git이 추적하지 않는 파일만 직접 관리하고, 추적 파일은 서버에서 수정하지 않습니다.
+
+## 수동 DB 백업
+
+배포 전 수동 백업이 필요하면 `.env` 값을 사용해 `mysqldump`로 현재 DB를 저장합니다.
+
+```bash
+cd /home/ubuntu/workspace/KBO_DiscordApp
+
+set -a
+. ./.env
+set +a
+
+mkdir -p /home/ubuntu/backups/kbo
+
+umask 077
+tmp_cnf="$(mktemp)"
+trap 'rm -f "$tmp_cnf"' EXIT
+
+cat > "$tmp_cnf" <<EOF
+[client]
+user=${DB_USER}
+password=${DB_PASSWORD}
+host=${DB_HOST:-localhost}
+EOF
+
+mysqldump --defaults-extra-file="$tmp_cnf" "${DB_NAME}" > /home/ubuntu/backups/kbo/kbo-$(date +%Y%m%d-%H%M%S).sql
+```
+
+백업 파일에는 사용자 설정과 알림 기록이 포함될 수 있으므로 GitHub에 올리지 않습니다.
+자동 백업 cron 또는 systemd timer는 이번 작업 범위에 포함하지 않고 후속 작업에서 별도 Spec으로 다룹니다.
 
 ## CI/CD 정책
 
@@ -147,8 +180,6 @@ DEPLOY_PATH=/home/ubuntu/workspace/KBO_DiscordApp ops/deploy-restart-only.sh
 
 ## 현재 남은 운영 준비 작업
 
-- npm이 있는 환경에서 `package-lock.json` 생성
-- lockfile 생성 후 `.github/workflows/ci.yml`의 install step을 `npm ci`로 변경
 - 서버에 Node.js 22, MariaDB, Chromium 설치
 - 서버 `.env` 작성
 - systemd 서비스 설치

@@ -13,10 +13,10 @@ KBO 팬이 Discord 안에서 경기 일정, 실시간 경기 흐름, 순위, 선
 - 런타임: Node.js, discord.js v14, ESM
 - 저장소: MariaDB, `mysql2/promise`
 - 크롤링: KBO 웹 페이지, `puppeteer-core`, KBO 모바일 live state API
-- 실행: Docker Compose, `node:22-slim`, Chromium 포함
+- 실행: Ubuntu + systemd 직접 실행, `/usr/bin/node`, 호스트 MariaDB와 Chromium
 - 검증: Node built-in test runner, GitHub Actions CI
 - 운영 서버 리소스: 1 vCPU, 1GB RAM 기준으로 설계
-- 운영 원칙: polling, Chromium 실행, DB 쿼리, Docker 재시작 비용을 낮게 유지
+- 운영 원칙: polling, Chromium 실행, DB 쿼리, systemd restart 비용을 낮게 유지
 
 ## 운영 제약과 장애 대응 원칙
 
@@ -29,9 +29,9 @@ KBO 팬이 Discord 안에서 경기 일정, 실시간 경기 흐름, 순위, 선
 - 봇 재시작이나 경기 중 장애로 이벤트 히스토리가 비어 있으면 과거 흐름을 추정하지 않습니다. 최종 스코어와 승패만 보냅니다.
 - KBO 응답 실패나 timeout이 발생하면 기존 저장 데이터를 사용하고, 없는 데이터는 억지로 추정하지 않습니다.
 - 중복 DM은 기존 delivery key 정책으로 방지합니다.
-- CI는 GitHub runner에서 syntax check, test, Docker build를 수행합니다. 운영 서버의 1 vCPU/1GB RAM에서 Docker image build를 수행하는 배포 방식은 피합니다.
+- CI는 GitHub runner에서 syntax check와 test를 수행합니다. 운영 서버의 1 vCPU/1GB RAM에서 build/test를 수행하는 배포 방식은 피합니다.
 - CD를 추가할 경우 운영 서버에서는 가벼운 restart-only 배포만 수행합니다. 서버에서 test, Docker build, 일반 build 작업을 실행하지 않습니다.
-- 의존성 재현성을 위해 `package-lock.json`을 저장소에 포함합니다. lockfile이 생기면 CI는 `npm install`이 아니라 `npm ci`를 사용합니다.
+- 의존성 재현성을 위해 `package-lock.json`을 저장소에 포함합니다. CI는 `npm ci`를 사용합니다.
 - 운영 서버에서는 `package.json` 또는 `package-lock.json`이 바뀐 배포에서만 `npm install --omit=dev`를 실행합니다.
 
 ## 작업 상태값
@@ -69,9 +69,9 @@ KBO 팬이 Discord 안에서 경기 일정, 실시간 경기 흐름, 순위, 선
   - 득점, 역전, 경기 취소 이벤트 알림
   - 중복 발송 방지용 delivery 기록
 - 운영/검증
-  - Docker Compose 실행
-  - GitHub Actions CI
   - Docker 없는 systemd 운영 기준 문서
+  - restart-only 수동 배포 스크립트
+  - GitHub Actions CI
   - 명령 실행 로그 저장
   - 주요 parser, formatter, command, alert, database schema 테스트
 
@@ -232,7 +232,7 @@ Goal 입력용 요약:
 
 CI/CD 기준:
 - `package-lock.json`을 생성해 저장소에 포함합니다.
-- lockfile 도입 후 CI는 `npm ci`, `npm run check`, `npm test`, `docker build .`를 통과해야 합니다.
+- lockfile 도입 후 CI는 `npm ci`, `npm run check`, `npm test`를 통과해야 합니다.
 - schema 변경이 있으므로 database schema 테스트를 반드시 갱신합니다.
 - CD는 이번 경기 종료 요약 기능 구현 범위에는 포함하지 않습니다.
 - 향후 CD를 추가할 때 운영 서버에서는 build/test를 수행하지 않고, git update, conditional npm install, systemd restart만 수행합니다.
@@ -284,7 +284,7 @@ KIA vs LG 경기는 우천취소 상태입니다.
 - 기존 알림 중복 방지 정책이 유지됩니다.
 - 이벤트 저장/조회 실패가 DM 발송 전체 실패로 번지지 않습니다.
 - 새 기능은 기존 alert worker 외 별도 background loop를 만들지 않습니다.
-- CI에서 syntax check, test, Docker build가 통과합니다.
+- CI에서 syntax check와 test가 통과합니다.
 - `package-lock.json`이 포함되고, CI가 `npm ci` 기준으로 동작합니다.
 
 테스트 시나리오:
@@ -349,9 +349,9 @@ Plan 작성 시 확인할 구현 영향:
    - 상태: `Spec`
    - 먼저 결정할 것: 구체 DB schema, 이벤트 저장 함수 경계, alert worker 데이터 흐름
 3. 운영 배포 준비 Plan 작성
-   - 상태: `Spec`
-   - 확정된 것: systemd 서비스 템플릿, MariaDB 소형 서버 설정, restart-only 수동 배포 스크립트, 운영 가이드
-   - 남은 것: `package-lock.json` 생성, CI `npm ci` 전환, GitHub Actions restart-only CD workflow
+   - 상태: `Done`
+   - 완료된 것: systemd 서비스 템플릿, MariaDB 소형 서버 설정, restart-only 수동 배포 스크립트, 운영 가이드, `package-lock.json`, CI `npm ci` 전환
+   - 후속 후보: 필요 시 GitHub Actions restart-only CD workflow
 4. 서버별 알림 채널 설정 Spec 작성
    - 상태: `Backlog`
    - 먼저 결정할 것: 서버 설정 테이블, 관리자 권한 기준, 기본값
