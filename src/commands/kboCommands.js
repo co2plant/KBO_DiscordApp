@@ -148,30 +148,6 @@ export function createCommands(dependencies) {
   return [
     {
       data: new SlashCommandBuilder()
-        .setName('차렷')
-        .setDescription('돌승엽이 잘못한 경우에 사용하십시오.'),
-      async execute(interaction) {
-        await interaction.reply('차렷!');
-      }
-    },
-    {
-      data: new SlashCommandBuilder()
-        .setName('열중쉬어')
-        .setDescription('돌승엽이 잘하였지만 부족할 때 사용하십시오.'),
-      async execute(interaction) {
-        await interaction.reply('열중 쉬어!');
-      }
-    },
-    {
-      data: new SlashCommandBuilder()
-        .setName('쉬어')
-        .setDescription('돌승엽이 잘한 경우에 사용하십시오.'),
-      async execute(interaction) {
-        await interaction.reply('쉬어!');
-      }
-    },
-    {
-      data: new SlashCommandBuilder()
         .setName('도움말')
         .setDescription('KBO 봇 사용법과 주요 명령어를 보여줍니다.'),
       async execute(interaction) {
