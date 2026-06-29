@@ -15,6 +15,7 @@ test('database schema includes game events for lead-change result summaries', ()
 
   assert.match(source, /CREATE TABLE IF NOT EXISTS GameEvents/);
   assert.match(source, /event_key VARCHAR\(128\) PRIMARY KEY/);
+  assert.match(source, /score_delta INT NOT NULL DEFAULT 0/);
   assert.match(source, /idx_game_events_game/);
   assert.match(source, /export async function insertGameEvent/);
   assert.match(source, /export async function selectGameEventsByGameIds/);

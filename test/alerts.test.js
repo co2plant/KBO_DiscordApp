@@ -512,7 +512,7 @@ test('runAlertCheck sends score event alerts from previous score snapshots', asy
   assert.equal(events.includes('dm:true'), true);
 });
 
-test('runAlertCheck stores lead-change events and uses them in result summaries', async (t) => {
+test('runAlertCheck stores score and lead-change events and uses lead changes in result summaries', async (t) => {
   t.mock.method(console, 'log', () => {});
   const events = [];
   const storedEvents = [];
@@ -560,7 +560,7 @@ test('runAlertCheck stores lead-change events and uses them in result summaries'
     },
     async selectGameEventsByGameIds(gameDate, gameIds, eventType) {
       events.push(`history:${gameDate}:${gameIds.join(',')}:${eventType}`);
-      return storedEvents;
+      return storedEvents.filter((event) => event.alertType === eventType);
     },
     async upsertScoreSnapshots(snapshots) {
       events.push(`upsert:${snapshots.map((snapshot) => snapshot.snapshotKey).join(',')}`);
@@ -613,7 +613,9 @@ test('runAlertCheck stores lead-change events and uses them in result summaries'
 
   assert.equal(result.sent, 1);
   assert.equal(events.includes('snapshots:0505'), true);
+  assert.equal(events.includes('event:2026-05-05:050500:score_change:KIA:4-3'), true);
   assert.equal(events.includes('event:2026-05-05:050500:lead_change:KIA:4-3'), true);
+  assert.equal(storedEvents.find((event) => event.alertType === ALERT_TYPES.SCORE_CHANGE)?.scoreDelta, 2);
   assert.equal(events.includes('history:2026-05-05:050500:lead_change'), true);
   assert.equal(events.includes('dm:true:true'), true);
 });
