@@ -1,13 +1,58 @@
-import { nowKst, toMmdd } from '../constants.js';
+import { nowKst, toMmdd, toYmd } from '../constants.js';
 import {
   refreshLiveScoresForCommand,
   ensureScheduleDataForDate
 } from './dataReady.js';
-import { buildDueAlertDeliveries } from './alerts.js';
+import {
+  ALERT_TYPES,
+  buildDueAlertDeliveries
+} from './alerts.js';
 import {
   buildScoreEvents,
   buildScoreSnapshots
 } from './scoreEvents.js';
+
+async function storeLeadChangeEvents(database, scoreEvents) {
+  if (!database.insertGameEvent) {
+    return;
+  }
+
+  for (const event of scoreEvents.filter((scoreEvent) => scoreEvent.alertType === ALERT_TYPES.LEAD_CHANGE)) {
+    try {
+      await database.insertGameEvent(event);
+    } catch (error) {
+      console.log(`[alert:event] failed event=${event.eventKey}: ${error.message}`);
+    }
+  }
+}
+
+function groupEventsByGameId(events) {
+  const grouped = new Map();
+  for (const event of events ?? []) {
+    const existing = grouped.get(event.gameId) ?? [];
+    existing.push(event);
+    grouped.set(event.gameId, existing);
+  }
+  return grouped;
+}
+
+async function loadResultLeadChangeEvents(database, selectedDate, resultGameIds) {
+  if (!database.selectGameEventsByGameIds || resultGameIds.length === 0) {
+    return new Map();
+  }
+
+  try {
+    const events = await database.selectGameEventsByGameIds(
+      toYmd(selectedDate),
+      resultGameIds,
+      ALERT_TYPES.LEAD_CHANGE
+    );
+    return groupEventsByGameId(events);
+  } catch (error) {
+    console.log(`Failed to load lead change events for result summary: ${error.message}`);
+    return new Map();
+  }
+}
 
 export async function runAlertCheck(dependencies, options = {}) {
   const { client, database, crawler } = dependencies;
@@ -21,8 +66,24 @@ export async function runAlertCheck(dependencies, options = {}) {
     ? await database.selectScoreSnapshots(selectedDateKey)
     : [];
   const scoreEvents = buildScoreEvents(previousSnapshots, games, selectedDate);
+  await storeLeadChangeEvents(database, scoreEvents);
   const alerts = await database.selectEnabledUserAlerts();
-  const deliveries = buildDueAlertDeliveries(alerts, games, selectedDate, { now, events: scoreEvents });
+  const baseDeliveries = buildDueAlertDeliveries(alerts, games, selectedDate, { now, events: scoreEvents });
+  const resultGameIds = [
+    ...new Set(
+      baseDeliveries
+        .filter((delivery) => delivery.alertType === ALERT_TYPES.GAME_RESULT)
+        .map((delivery) => delivery.gameId)
+    )
+  ];
+  const resultEventHistoryByGameId = await loadResultLeadChangeEvents(database, selectedDate, resultGameIds);
+  const deliveries = resultGameIds.length
+    ? buildDueAlertDeliveries(alerts, games, selectedDate, {
+      now,
+      events: scoreEvents,
+      resultEventHistoryByGameId
+    })
+    : baseDeliveries;
 
   let sent = 0;
   let skipped = 0;

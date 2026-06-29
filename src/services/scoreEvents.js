@@ -46,6 +46,7 @@ export function buildScoreSnapshot(game, selectedDate) {
 function eventBase(snapshot) {
   return {
     snapshotKey: snapshot.snapshotKey,
+    gameDate: snapshot.gameDate,
     gameId: snapshot.gameId,
     time: snapshot.time,
     away: snapshot.away,

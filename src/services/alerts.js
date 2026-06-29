@@ -45,9 +45,35 @@ function normalizeScore(score) {
   return score === null || score === undefined || score === '' || Number(score) === -1 ? 0 : Number(score);
 }
 
+function isCancelledStatus(remarks) {
+  return String(remarks ?? '').includes('취소');
+}
+
+function teamSubject(team) {
+  const text = String(team ?? '').trim();
+  const lastCode = text.charCodeAt(text.length - 1);
+  if (lastCode >= 0xAC00 && lastCode <= 0xD7A3) {
+    const hasFinalConsonant = (lastCode - 0xAC00) % 28 !== 0;
+    return `${text}${hasFinalConsonant ? '이' : '가'}`;
+  }
+
+  return `${text}가`;
+}
+
 function isTeamInGame(team, game) {
   const normalized = normalizeTeamName(team);
   return normalizeTeamName(game.away) === normalized || normalizeTeamName(game.home) === normalized;
+}
+
+function displayTeamInGame(team, game) {
+  const normalized = normalizeTeamName(team);
+  if (normalizeTeamName(game.away) === normalized) {
+    return game.away;
+  }
+  if (normalizeTeamName(game.home) === normalized) {
+    return game.home;
+  }
+  return team;
 }
 
 export function normalizeAlertTeam(teamName) {
@@ -118,7 +144,66 @@ function buildEventAlertMessage(alert, event) {
   ].join('\n');
 }
 
-export function buildAlertMessage(alert, game, event = null) {
+function buildResultSummaryLine(alert, game) {
+  const team = displayTeamInGame(alert.team, game);
+  const awayScore = normalizeScore(game.awayScore);
+  const homeScore = normalizeScore(game.homeScore);
+  if (awayScore === homeScore) {
+    return `${teamSubject(team)} ${awayScore} vs ${homeScore} 무승부로 경기를 마쳤습니다.`;
+  }
+
+  const subscribedTeamIsAway = normalizeTeamName(team) === normalizeTeamName(game.away);
+  const subscribedScore = subscribedTeamIsAway ? awayScore : homeScore;
+  const opponentScore = subscribedTeamIsAway ? homeScore : awayScore;
+  const diff = Math.abs(subscribedScore - opponentScore);
+  const result = subscribedScore > opponentScore ? '승리' : '패배';
+  return `${teamSubject(team)} ${diff}점 차로 ${result}했습니다.`;
+}
+
+function buildLeadChangeSummaryLine(leadChangeEvents) {
+  const events = leadChangeEvents ?? [];
+  if (events.length === 0) {
+    return '';
+  }
+
+  const last = events[events.length - 1];
+  const remarks = last.remarks && last.remarks !== '-' ? `${last.remarks} ` : '';
+  const leadingTeamIsAway = normalizeTeamName(last.team) === normalizeTeamName(last.away);
+  const leaderScore = leadingTeamIsAway ? normalizeScore(last.awayScore) : normalizeScore(last.homeScore);
+  const opponentScore = leadingTeamIsAway ? normalizeScore(last.homeScore) : normalizeScore(last.awayScore);
+  return `역전은 ${events.length}번 있었습니다. 마지막 역전은 ${remarks}${teamSubject(last.team)} ${leaderScore}-${opponentScore}으로 앞선 장면입니다.`;
+}
+
+function buildGameResultSummaryMessage(alert, game, options = {}) {
+  const team = displayTeamInGame(alert.team, game);
+  const teamLogo = logoEmoji[team] ?? '';
+  const awayLogo = logoEmoji[game.away] ?? '';
+  const homeLogo = logoEmoji[game.home] ?? '';
+
+  if (isCancelledStatus(game.remarks)) {
+    return [
+      `${teamLogo} ${team} 경기 취소 안내`.trim(),
+      '',
+      `${awayLogo} ${game.away} vs ${homeLogo} ${game.home} 경기는 ${game.remarks} 상태입니다.`.trim(),
+      '',
+      `${game.time} | ${game.stadium} | ${game.remarks}`.trim()
+    ].join('\n');
+  }
+
+  const scoreLine = `${awayLogo} ${game.away} ${normalizeScore(game.awayScore)} vs ${normalizeScore(game.homeScore)} ${homeLogo} ${game.home}`.trim();
+  const leadChangeLine = buildLeadChangeSummaryLine(options.leadChangeEvents);
+  return [
+    `${teamLogo} ${team} 경기 종료 요약`.trim(),
+    '',
+    scoreLine,
+    buildResultSummaryLine(alert, game),
+    leadChangeLine,
+    '',
+    `${game.time} | ${game.stadium} | ${game.remarks}`.trim()
+  ].filter((line, index, lines) => line || lines[index - 1]).join('\n');
+}
+
+export function buildAlertMessage(alert, game, event = null, options = {}) {
   if (event) {
     return buildEventAlertMessage(alert, event);
   }
@@ -137,8 +222,12 @@ export function buildAlertMessage(alert, game, event = null) {
     ].join('\n');
   }
 
+  if (alert.alertType === ALERT_TYPES.GAME_RESULT) {
+    return buildGameResultSummaryMessage(alert, game, options);
+  }
+
   return [
-    `${teamLogo} ${alert.team} 경기 종료 알림입니다.`.trim(),
+    `${teamLogo} ${alert.team} 알림입니다.`.trim(),
     `${game.time} | ${matchup} | ${game.stadium} | ${game.remarks}`.trim()
   ].join('\n');
 }
@@ -146,6 +235,7 @@ export function buildAlertMessage(alert, game, event = null) {
 export function buildDueAlertDeliveries(alerts, games, selectedDate, options = {}) {
   const now = options.now ?? new Date();
   const events = options.events ?? [];
+  const resultEventHistoryByGameId = options.resultEventHistoryByGameId ?? new Map();
   const deliveries = [];
 
   for (const alert of alerts ?? []) {
@@ -198,7 +288,9 @@ export function buildDueAlertDeliveries(alerts, games, selectedDate, options = {
         discordUserId: normalizedAlert.discordUserId,
         alertType: normalizedAlert.alertType,
         gameId: game.id,
-        message: buildAlertMessage(normalizedAlert, game)
+        message: buildAlertMessage(normalizedAlert, game, null, {
+          leadChangeEvents: resultEventHistoryByGameId.get?.(game.id) ?? []
+        })
       });
     }
   }

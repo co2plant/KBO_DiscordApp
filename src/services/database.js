@@ -139,6 +139,25 @@ export async function ensureSchema() {
     )
   `);
   await execute(`
+    CREATE TABLE IF NOT EXISTS GameEvents (
+      event_key VARCHAR(128) PRIMARY KEY,
+      game_date VARCHAR(10) NOT NULL,
+      game_id VARCHAR(32) NOT NULL,
+      event_type VARCHAR(32) NOT NULL,
+      time VARCHAR(16) NOT NULL,
+      team VARCHAR(32) NOT NULL,
+      previous_leader_team VARCHAR(32) NOT NULL,
+      away VARCHAR(32) NOT NULL,
+      home VARCHAR(32) NOT NULL,
+      away_score INT NOT NULL,
+      home_score INT NOT NULL,
+      stadium VARCHAR(64) NOT NULL,
+      remarks VARCHAR(64) NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_game_events_game (game_date, game_id, event_type, created_at)
+    )
+  `);
+  await execute(`
     CREATE TABLE IF NOT EXISTS UserPreferences (
       discord_user_id VARCHAR(32) PRIMARY KEY,
       favorite_team VARCHAR(32) NOT NULL,
@@ -563,6 +582,95 @@ export async function upsertScoreSnapshots(snapshots) {
       ]
     );
   }
+}
+
+function mapGameEvent(row) {
+  return {
+    eventKey: row.event_key,
+    gameDate: row.game_date,
+    gameId: row.game_id,
+    alertType: row.event_type,
+    time: row.time,
+    team: row.team,
+    previousLeaderTeam: row.previous_leader_team,
+    away: row.away,
+    home: row.home,
+    awayScore: Number(row.away_score),
+    homeScore: Number(row.home_score),
+    stadium: row.stadium,
+    remarks: row.remarks,
+    createdAt: row.created_at
+  };
+}
+
+export async function insertGameEvent(event) {
+  await ensureSchema();
+  try {
+    await execute(
+      `
+        INSERT INTO GameEvents (
+          event_key,
+          game_date,
+          game_id,
+          event_type,
+          time,
+          team,
+          previous_leader_team,
+          away,
+          home,
+          away_score,
+          home_score,
+          stadium,
+          remarks
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        event.eventKey,
+        event.gameDate,
+        event.gameId,
+        event.alertType,
+        event.time,
+        event.team,
+        event.previousLeaderTeam ?? '',
+        event.away,
+        event.home,
+        event.awayScore,
+        event.homeScore,
+        event.stadium,
+        event.remarks
+      ]
+    );
+    return true;
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
+export async function selectGameEventsByGameIds(gameDate, gameIds, eventType) {
+  await ensureSchema();
+  const normalizedGameIds = [...new Set((gameIds ?? []).map((gameId) => String(gameId)).filter(Boolean))];
+  if (normalizedGameIds.length === 0) {
+    return [];
+  }
+
+  const placeholders = normalizedGameIds.map(() => '?').join(', ');
+  const [rows] = await execute(
+    `
+      SELECT *
+      FROM GameEvents
+      WHERE game_date = ?
+        AND event_type = ?
+        AND game_id IN (${placeholders})
+      ORDER BY game_id, created_at, event_key
+    `,
+    [String(gameDate), eventType, ...normalizedGameIds]
+  );
+  return rows.map(mapGameEvent);
 }
 
 function mapUserPreference(row) {
