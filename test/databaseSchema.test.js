@@ -10,6 +10,16 @@ test('database schema includes score snapshots for live event detection', () => 
   assert.match(source, /export async function upsertScoreSnapshots/);
 });
 
+test('database schema includes game events for lead-change result summaries', () => {
+  const source = readFileSync('src/services/database.js', 'utf8');
+
+  assert.match(source, /CREATE TABLE IF NOT EXISTS GameEvents/);
+  assert.match(source, /event_key VARCHAR\(128\) PRIMARY KEY/);
+  assert.match(source, /idx_game_events_game/);
+  assert.match(source, /export async function insertGameEvent/);
+  assert.match(source, /export async function selectGameEventsByGameIds/);
+});
+
 test('database schema includes user preferences for default team settings', () => {
   const source = readFileSync('src/services/database.js', 'utf8');
 

@@ -55,9 +55,11 @@ test('buildScoreEvents emits score and lead-change events when the subscribed te
   ]);
   assert.equal(events[0].team, 'KIA');
   assert.equal(events[0].scoreDelta, 3);
+  assert.equal(events[0].gameDate, '2026-05-05');
   assert.equal(events[0].eventKey, '2026-05-05:050500:score_change:KIA:4-3');
   assert.equal(events[1].team, 'KIA');
   assert.equal(events[1].previousLeaderTeam, 'LG');
+  assert.equal(events[1].gameDate, '2026-05-05');
   assert.equal(events[1].eventKey, '2026-05-05:050500:lead_change:KIA:4-3');
 });
 
