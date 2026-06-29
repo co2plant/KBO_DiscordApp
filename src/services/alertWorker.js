@@ -12,12 +12,17 @@ import {
   buildScoreSnapshots
 } from './scoreEvents.js';
 
-async function storeLeadChangeEvents(database, scoreEvents) {
+const STORED_EVENT_TYPES = new Set([
+  ALERT_TYPES.SCORE_CHANGE,
+  ALERT_TYPES.LEAD_CHANGE
+]);
+
+async function storeGameEvents(database, scoreEvents) {
   if (!database.insertGameEvent) {
     return;
   }
 
-  for (const event of scoreEvents.filter((scoreEvent) => scoreEvent.alertType === ALERT_TYPES.LEAD_CHANGE)) {
+  for (const event of scoreEvents.filter((scoreEvent) => STORED_EVENT_TYPES.has(scoreEvent.alertType))) {
     try {
       await database.insertGameEvent(event);
     } catch (error) {
@@ -66,7 +71,7 @@ export async function runAlertCheck(dependencies, options = {}) {
     ? await database.selectScoreSnapshots(selectedDateKey)
     : [];
   const scoreEvents = buildScoreEvents(previousSnapshots, games, selectedDate);
-  await storeLeadChangeEvents(database, scoreEvents);
+  await storeGameEvents(database, scoreEvents);
   const alerts = await database.selectEnabledUserAlerts();
   const baseDeliveries = buildDueAlertDeliveries(alerts, games, selectedDate, { now, events: scoreEvents });
   const resultGameIds = [

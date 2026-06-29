@@ -151,12 +151,17 @@ export async function ensureSchema() {
       home VARCHAR(32) NOT NULL,
       away_score INT NOT NULL,
       home_score INT NOT NULL,
+      score_delta INT NOT NULL DEFAULT 0,
       stadium VARCHAR(64) NOT NULL,
       remarks VARCHAR(64) NOT NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       INDEX idx_game_events_game (game_date, game_id, event_type, created_at)
     )
   `);
+  const [gameEventScoreDeltaColumns] = await execute("SHOW COLUMNS FROM GameEvents WHERE Field = 'score_delta'");
+  if (gameEventScoreDeltaColumns.length === 0) {
+    await execute('ALTER TABLE GameEvents ADD COLUMN score_delta INT NOT NULL DEFAULT 0 AFTER home_score');
+  }
   await execute(`
     CREATE TABLE IF NOT EXISTS UserPreferences (
       discord_user_id VARCHAR(32) PRIMARY KEY,
@@ -597,6 +602,7 @@ function mapGameEvent(row) {
     home: row.home,
     awayScore: Number(row.away_score),
     homeScore: Number(row.home_score),
+    scoreDelta: Number(row.score_delta ?? 0),
     stadium: row.stadium,
     remarks: row.remarks,
     createdAt: row.created_at
@@ -620,10 +626,11 @@ export async function insertGameEvent(event) {
           home,
           away_score,
           home_score,
+          score_delta,
           stadium,
           remarks
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         event.eventKey,
@@ -637,6 +644,7 @@ export async function insertGameEvent(event) {
         event.home,
         event.awayScore,
         event.homeScore,
+        event.scoreDelta ?? 0,
         event.stadium,
         event.remarks
       ]
